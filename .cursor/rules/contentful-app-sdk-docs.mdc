@@ -1,0 +1,1249 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+App SDK Reference
+This document describes the App SDK that apps use to communicate with the Contentful web app and the Contentful Management API.
+
+You can also watch The Tools of the Contentful App Framework to learn more about these tools.
+
+The App SDK methods and functionality (formerly known as UI Extensions SDK) can still be used to build UI Extensions unless otherwise specified.
+Table of Contents
+Usage
+
+Inclusion in your project
+Initialization
+Locations
+Using the contentful-management library
+Methods
+
+Field
+Entry
+Content Type
+Locales
+User
+Window
+Dialogs
+Navigator
+Notifier
+Editor
+IDs
+Hostnames
+Access
+Parameters
+App configuration
+Deprecated Methods
+
+Space
+Inclusion in your project
+You will need to include the @contentful/app-sdk library in your HTML5 app:
+
+<script src="https://cdn.jsdelivr.net/npm/@contentful/app-sdk@4"></script>
+The App SDK is also distributed as an NPM package.
+
+npm install --save @contentful/app-sdk
+Initialization
+The App SDK exposes the contentfulApp.init() method. This is the entry point for all extension-related code. If you require the script from the CDN and use it without any module system the init method is available as window.contentfulApp.init:
+
+window.contentfulApp.init(function (sdk) {
+  var value = sdk.field.getValue();
+  sdk.field.setValue('Hello world!');
+});
+If you use a bundler supporting ES6 modules you can use the import statement:
+
+import { init as initContentfulApp } from '@contentful/app-sdk';
+
+initContentfulApp((sdk) => {
+  /* ... */
+});
+If you use a CommonJS bundler you need to require the App SDK:
+
+const contentfulApp = require('@contentful/app-sdk');
+
+contentfulApp.init((sdk) => {
+  /* ... */
+});
+Locations
+Each individual place in the web app where a widget can be rendered is called a "location". All available locations are exported as constants:
+
+import { init, locations } from '@contentful/app-sdk';
+Location	Rendered as...	Additional APIs available
+locations.LOCATION_ENTRY_FIELD	a content field editor	sdk.editor, sdk.entry, sdk.contentType, sdk.field
+locations.LOCATION_ENTRY_SIDEBAR	an entry sidebar item	sdk.editor, sdk.entry, sdk.contentType
+locations.LOCATION_ENTRY_EDITOR	the entire entry editor	sdk.editor, sdk.entry, sdk.contentType
+locations.LOCATION_DIALOG	a dialog window	none
+locations.LOCATION_PAGE	a separate page	none
+locations.LOCATION_HOME	an app home page	none
+locations.LOCATION_APP_CONFIG	an app configuration screen	sdk.app
+Deprecated:
+
+locations.LOCATION_ENTRY_FIELD_SIDEBAR - renders a content field control in the sidebar. Use locations.LOCATION_ENTRY_SIDEBAR instead.
+To check the location in which your extension is running use location.is:
+
+import { init, locations } from '@contentful/app-sdk';
+
+init((sdk) => {
+  if (sdk.location.is(locations.LOCATION_ENTRY_SIDEBAR)) {
+    renderSidebarUI();
+  }
+  if (sdk.location.is(locations.LOCATION_DIALOG)) {
+    renderDialogUI();
+  }
+});
+Since 3.6.0
+
+Using the contentful-management library
+Since version 4.0.0 it is possible to use the contentful-management library in your app with minimal configuration.
+
+To do this, you can pass the cmaAdapter, which is part of the App SDK, inside your app as an apiAdapter in the createClient function of the contentful-management library. This means that you do not need to pass a token in the configuration to authorize the client, since it is already authorized by the installation in your space. To make accessing space-scoped entities even easier, it is recommended to use the "plain" client of the SDK and set the space and environment as default values from the ids API of the App SDK, so that they are automatically set on every request:
+
+import { createClient } from 'contentful-management'
+
+const cma = createClient(
+  { apiAdapter: sdk.cmaAdapter },
+  {
+    type: 'plain',
+    defaults: {
+      environmentId: sdk.ids.environmentAlias ?? sdk.ids.environment,
+      spaceId: sdk.ids.space,
+    },
+  }
+)
+
+const locales = await cma.locale.getMany({})
+For more information on using the client and the api itself, see the official documentation of the Contentful Management API and the javascript client library.
+
+Note:
+
+Since the app is installed in a specific environment of a space, it can only access entities within that environment. The Contentful Management endpoints must therefore start with /space/<space-id>/environments/<environmentId>.
+
+Field
+sdk.field
+
+Only available in some locations.
+
+This API gives you access to the value and metadata of the field the extension is attached to.
+
+If you use localization, an extension instance will be rendered for each locale. This means you can only change the value for the given locale. See the entry.fields API for how to change values for different locales.
+
+If an entry returned by the Contentful Management API looks like the following:
+
+{
+  sys: { ... },
+  fields: {
+    title: {
+      "en_US": "My Post"
+    },
+    ...
+  }
+}
+Then the extension is attached to the title field and the en_US locale.
+
+Getting field values
+sdk.field.getValue(): mixed
+
+Gets the current value of the field and locale. In the example this would yield "My Post".
+
+Setting field values
+sdk.field.setValue(value): Promise<mixed>
+
+Sets the value for the field and locale. The promise is resolved when the change has been acknowledged. The type of the value must match the expected field type. For example, if the extension is attached to a "Symbol" field you must pass a string.
+
+Example:
+
+sdk.field
+  .setValue('foo')
+  .then((data) => {
+    console.log(data); // Returns "foo".
+  })
+  .catch((err) => {
+    console.log(err);
+  });
+Removing field values
+sdk.field.removeValue(): Promise<void>
+
+Removes the value for the field and locale. A subsequent call to getValue() for the field would yield undefined.
+
+Setting a field to be invalid/valid
+sdk.field.setInvalid(Boolean): undefined
+
+Communicates to the Contentful web application if the field is in a valid state or not. This impacts the styling applied to the field container.
+
+This method is only available in the field location.
+
+Receiving notifications for external field value changes
+sdk.field.onValueChanged(callback): function
+
+Calls the callback every time the value of the field is changed by an external event (e.g. when multiple editors are working on the same entry) or when setValue() is called. Note that onValueChanged also gets called when the entry is loaded the first time.
+
+The method returns a function you can call to stop listening to changes.
+
+Example:
+
+// Handler for external field value changes.
+function valueChangeHandler(value) {
+  inputEl.value = value || '';
+}
+// Callback for changes of the field value.
+var detachValueChangeHandler = sdk.field.onValueChanged(valueChangeHandler);
+Use detachValueChangeHandler() to unsubscribe.
+
+Changed in v3.0.0
+
+Getting disabled state of field
+sdk.field.getIsDisabled(): boolean
+
+Returns whether the field is disabled. The disabled state can change. To always work with the latest state, use onIsDisabledChanged.
+
+Since 4.16.0
+
+Receiving notifications for external enabling/disabling of field
+sdk.field.onIsDisabledChanged(callback): function
+
+Calls the callback when the disabled status of the field changes. A boolean indicating whether the field is disabled or not is passed to the callback.
+
+The method returns a function that you can call to stop listening to changes.
+
+See above for an example.
+
+Getting field errors
+sdk.field.getSchemaErrors(): Array<object>
+
+Returns the field's validation errors. The schema errors can change. To always work with the latest errors, use onSchemaErrorsChanged.
+
+Since 4.16.0
+
+Receiving notifications when field is re-validated
+sdk.field.onSchemaErrorsChanged(callback): function
+
+Calls the callback immediately with the current validation errors and whenever the field is re-validated. The callback receives an array of error objects. An empty array indicates no errors.
+
+The errors are updated when the app validates an entry. This happens when loading an entry or when the user tries to publish it.
+
+The method returns a function that you can call to stop listening to changes.
+
+See above for an example.
+
+Since 2.1.0
+
+Getting the id of the field
+sdk.field.id: string
+
+The ID of a field is defined in an entry's content type. Yields "title" in the example.
+
+Getting the locale of the field
+sdk.field.locale: string
+
+The current locale of a field the extension is attached to. Yields "en_US" in the example.
+
+Getting the type of the field
+sdk.field.type: string
+
+Holds the type of the field the extension is attached to. The field type can be one of those described in our api documentation.
+
+In the case that the field type returned from sdk.field.type is "Array" use sdk.field.items to find the type of the items inside that array.
+
+Getting whether a field is required
+sdk.field.required: boolean
+
+Whether a field is required as defined in an entry's content type.
+
+Getting the type of items inside an array field
+sdk.field.items:
+  { type: string
+    linkType?: string
+    validations?: Object[]
+  }
+The type of items inside of an "Array" field.
+
+Getting the validations of the field
+sdk.field.validations: Validation[]
+
+A list of validations for this field that are defined in the content type. The content type documentation provides more information on the shape of validations.
+
+Since 2.1.0
+
+Entry
+sdk.entry
+
+Only available in some locations.
+
+This object allows you to read and update the value of any field of the current entry and to get the entry's metadata.
+
+Getting the Entry's sys object
+entry.getSys(): object
+
+Returns system metadata for an entry. The value coincides with the sys value of an entry returned by the v0.8.x of the Contentful Management API.
+
+Receiving notifications when sys object is changing
+entry.onSysChanged(callback): function
+
+Calls the callback with metadata every time that metadata changes. You can call the returned function to stop listening to changes.
+
+See above for an example.
+
+Saving an entry
+entry.save(): Promise<void>
+
+Saves the current entry. Generally, entries are saved automatically after a delay, but you can use this function to call the save function manually at any time. When this method is called auto_save webhooks will be triggered, whereas save webhooks will not be triggered.
+
+Since 4.3.0
+
+Publishing an entry
+entry.publish(options): Promise<void>
+
+Invokes the internal publish command to publish the current entry. It returns a promise that is resolved once the entry is successfully published. By default, the function call triggers the same validation as the publish button in the web app. If you want to bypass this UI validation, you can disable it by setting the parameter skipUiValidation in the method's options object to true.
+
+Since 4.3.0
+
+Unpublishing an entry
+entry.unpublish(): Promise<void>
+
+Similar to the publish command, it unpublishes the current entry and turns it into a draft. It also returns a promise that resolves when the entry was unpublished.
+
+Since 4.3.0
+
+Getting individual fields of an Entry
+entry.fields[id]: Field
+
+In addition to sdk.field, a extension can also control the values of all other fields in the current entry. Fields are referenced by their ID.
+
+The Field API methods provide a similar interface to sdk.field. The methods also accept an optional locale to change the value for a specific locale. It defaults to the space the space's default locale (see sdk.locales). Providing an unknown locale throws an exception.
+
+field.id: string
+field.locales: Array<string>
+field.getValue(locale?): mixed
+field.setValue(value, locale?): Promise<void>
+field.removeValue(locale?): Promise<void>
+field.onValueChanged(locale?, cb): function
+field.onIsDisabledChanged(locale?, cb): function
+field.getForLocale(locale): LocaleField
+You may want to build an instance of an entry Field identical to that provided by sdk.field in order to, for example, re-use a field extension as part of an entry extension. The entry.field[id] object allows you to do this by using the getForLocale method.
+
+Example: If the entry has a "title" field, you can transform it to upper case with:
+
+var titleField = sdk.entry.fields.title;
+var oldTitle = titleField.getValue();
+titleField.setValue(oldTitle.toUpperCase());
+Getting the Entry's metadata object
+entry.getMetadata(): object
+
+Returns metadata for a given entry:
+
+{
+  tags: [
+    {
+      sys: {
+        id: 'foo',
+        type: 'Link',
+        linkType: 'Tag',
+      },
+    },
+    {
+      sys: {
+        id: 'bar',
+        type: 'Link',
+        linkType: 'Tag',
+      },
+    },
+  ];
+}
+Since 3.39.0
+
+Receiving notifications when metadata object is changing
+entry.onMetadataChanged(callback): function
+
+Calls the callback with user metadata every time that metadata changes. You can call the returned function to stop listening to changes.
+
+Since 3.39.0
+
+Entry Tasks
+The entry object includes methods that allow for managing tasks assigned to the current entry. More information can be found in our API documentation.
+
+entry.getTask(id): Promise<Task>
+entry.getTasks(): Promise<TaskCollection>
+entry.createTask(taskData): Promise<Task>
+entry.updateTask(task): Promise<Task>
+entry.deleteTask(task): Promise<void>
+Since 3.32.0
+
+Content Type
+sdk.contentType
+
+Only available in some locations.
+
+This API gives you access to data about the content type of the entry. It has the form as described under "content type properties" in our api documentation.
+
+Since 1.0.0
+
+The object it returns looks similar to this:
+
+{
+  sys: { ... },
+  fields: { ... },
+  name: "fooContentType",
+  displayField: "title",
+  description: "This is an example description of a Content Type"
+}
+Locales
+sdk.locales
+
+A space can have multiple locales and each localized entry field can have different values for different locales. Locales are identified by their locale code, e.g. "en_US".
+
+Default Locale
+locales.default: string
+
+The default locale code for the current space.
+
+Listing Locales
+locales.available: Array<string>
+
+A list of locale codes of all locales available for editing in the current space.
+
+Locale names
+locales.names: Object
+
+An object with keys of locale codes and values of corresponding human-readable locale names.
+
+Since 3.4.3
+
+Locale fallbacks
+An object with keys of locale codes and values of corresponding fallback locale codes. If there's no fallback then the value is undefined.
+
+Since 3.10.4
+
+Locale direction
+locale.direction: Object
+
+An object with keys of locale codes and values of corresponding information indicating if the locale is right-to-left or left-to-right language.
+
+Since 3.10.7
+
+Locale optional
+locale.optional: Object
+
+An object with keys of locale codes and values of corresponding boolean value indicating if the locale is optional or not.
+
+Since 3.10.7
+
+{
+  available: ['en-US', 'pl', 'ar-DZ'],
+  default: 'en-US',
+  names: {
+    'en-US': 'English (US)',
+    pl: 'Polski',
+    'ar-DZ': 'Arabic (Algeria)'
+  },
+  fallbacks: {
+    'en-US': undefined,
+    pl: 'en-US',
+    'ar-DZ': 'es-US'
+  },
+  optional: {
+    'en-US': false,
+    'pl': true,
+    'ar-DZ': true
+  },
+  direction: {
+    'en-US': 'ltr',
+    'pl': 'ltr',
+    'ar-DZ': 'rtl'
+  }
+}
+User
+sdk.user
+
+This object holds information about the current user and roles. It has the following shape.
+
+{
+  sys: { id: 'b33ts', type: 'User' },
+  firstName: 'Dwight',
+  lastName: 'Schrute',
+  email: 'dwight@dundermifflin.com',
+  avatarUrl: 'https://avatar.com/x.jpg',
+  spaceMembership: {
+    sys: { id: 'abc123xyz', type: 'SpaceMembership' }
+    admin: false,
+    roles: [{
+      name: 'Assistant to the regional manager',
+      description: 'Not “Assistant regional manager”',
+    }]
+  }
+}
+The spaceMembership and roles objects have include a subset of the data from the corresponding resources in the Contentful Management API. You can find more information in the CMA Reference Documentation.
+
+Since 3.3.0
+
+Window
+sdk.window
+
+The window object provides methods to update the size of the iframe the extension is contained within. This prevents scrollbars inside the extension.
+
+To prevent a flickering scrollbar during height updates, it is recommended to set the extension's body to overflow: hidden;.
+
+Updating the extension's height
+window.updateHeight()
+
+Calculates the body's scrollHeight and sets the containers height to this value.
+
+Setting the extension's height
+window.updateHeight(height)
+
+Sets the iframe height to the given value in pixels. height must be an integer.
+
+Automatically updating the extension's height
+window.startAutoResizer(options)
+
+Listens for DOM changes and calls updateHeight() when the size changes.
+
+options is an object configuring the behavior of the auto resizer. The available options are:
+
+absoluteElements (boolean, optional): if true, the auto resizer takes absolute elements (e.g. dropdowns or tooltips) into account when resizing the app.
+Stopping the automatic updating of the extension's height
+window.stopAutoResizer()
+
+Stops resizing the iframe automatically.
+
+Dialogs
+sdk.dialogs
+
+This object provides methods for opening UI dialogs:
+
+Open the current app in a dialog
+dialogs.openCurrentApp(options)
+
+Opens the current app in a dialog.
+
+options is an object configuring the dialog. The available options are:
+
+title (string): adds header with close icon to the dialog if specified.
+width (number | small | medium | large | fullWidth): width of the dialog in pixels. Defaults to 700.
+position (center | top): vertical position of the dialog. Defaults to center.
+allowHeightOverflow (boolean): determines whether a modal higher than the viewport is allowed. Defaults to false.
+minHeight (string | number): determines minimal height of a modal window, helps to avoid "bubble" effect when dialog app is opened
+shouldCloseOnOverlayClick (boolean): indicates if clicking the overlay should close the dialog. Defaults to false.
+shouldCloseOnEscapePress (boolean): indicates if pressing the ESC key should close the dialog. Defaults to false.
+parameters (mixed): invocation parameters to pass to the app. Can be accessed as parameters.invocation in the opened app. Warning: parameters must not be functions or DOM elements. Instead, use the App SDK within the opened app directly.
+openCurrentApp returns a promise. Inside the app opened in a dialog you can call close(data) which will close the dialog and resolve the promise with data.
+
+// App
+sdk.dialogs
+  .openCurrentApp({
+    width: 500,
+    parameters: { test: true, value: 42 },
+  })
+  .then((data) => {
+    /* ... */
+  });
+
+// Dialog
+init((sdk) => {
+  console.log(sdk.parameters.invocation);
+  sdk.close({ hello: 'world' });
+});
+Since 3.10
+
+Opening an extension in a dialog
+dialogs.openExtension(options)
+
+Opens an extension in a dialog. Only available if rendered as an app. Accepts the same parameters as dialogs.openCurrentApp. You can optionally pass an additional parameter id to specify the extension that should be opened. id defaults to the current extension id.
+
+Since 3.6.0
+
+Open the current app or extension in a dialog
+dialogs.openCurrent(options)
+
+Opens the current app or current extension in a dialog. Accepts the same parameters as dialogs.openExtension and dialogs.openCurrentApp. The id property will always be set to the current id of the app or the extension.
+
+Since 3.15
+
+Opening an alert dialog
+dialogs.openAlert(options)
+
+Opens a simple alert window (which can only be closed). The method returns a promise always resolving to true once the dialog is closed.
+
+options is an object configuring the dialog. The available options are:
+
+title (string, required): title of the dialog.
+message (string, required): message of the dialog.
+confirmLabel (string, optional): label of the confirmation button. Defaults to "Confirm".
+shouldCloseOnEscapePress (boolean, optional): indicates if pressing the Escape key closes the dialog. Defaults to true.
+shouldCloseOnOverlayClick (boolean, optional): indicates if clicking the dialog overlay closes the dialog. Defaults to true.
+dialogs
+  .openAlert({
+    title: 'My alert',
+    message: 'My message to you',
+  })
+  .then((result) => {
+    // `result` is always `true`, can be skipped
+  });
+Since 3.4.2
+
+Opening a confirm dialog
+dialogs.openConfirm(options)
+
+Opens a confirmation window. A user can either confirm or cancel the dialog. The method returns a promise resolving to either true (for confirmations) or false (for cancellations). Clicking the dialog overlay or pressing the Escape key (if enabled) will cancel the dialog.
+
+options is an object configuring the dialog. The available options are the options of dialogs.openAlert(options) and additionally:
+
+cancelLabel (string, optional): label of the cancellation button. Defaults to "Cancel".
+intent (primary, positive, negative): color of the confirmation button. Defaults to primary.
+dialogs
+  .openConfirm({
+    title: 'My question',
+    message: 'What is your answer?',
+    intent: 'positive',
+    confirmLabel: 'Yes!',
+    cancelLabel: 'No...',
+  })
+  .then((result) => {
+    // `result` is either `true` or `false`
+  });
+Since 3.4.2
+
+Opening a prompt dialog
+dialogs.openPrompt(options)
+
+Opens a prompt window. A user can either provide a string input or cancel the dialog. The method returns a promise resolving the provided string (when confirmed) or false (when cancelled). Clicking the dialog overlay or pressing the Escape key (if enabled) will cancel the dialog.
+
+options is an object configuring the dialog. The available options are the options of dialogs.openConfirm(options) and additionally:
+
+defaultValue (string, optional): the default value of the text input. Defaults to an empty string.
+dialogs
+  .openPrompt({
+    title: 'My question',
+    message: 'Please tell me more...',
+    defaultValue: 'hello world',
+  })
+  .then((result) => {
+    // `result` is either a string or `false`
+  });
+Since 3.4.2
+
+Selecting a single Entry
+dialogs.selectSingleEntry(options)
+
+Opens a dialog for selecting a single entry. It returns a promise resolved with the selected entity or null if a user closes the dialog without selecting anything.
+
+options is an optional object configuring the dialog.The available options are:
+
+locale: The code of a locale you want to use to display proper titles and descriptions. Defaults to the space's default locale.
+contentTypes: An array of content type IDs of entries that you want to display in the selector. By default entries of all content types are displayed.
+// display a dialog for selecting a single entry
+dialogs.selectSingleEntry().then((selectedEntry) => {});
+
+// select a single entry of "blogpost" content type
+// and display result in "de-DE" locale
+dialogs
+  .selectSingleEntry({
+    locale: 'de-DE',
+    contentTypes: ['blogpost'],
+  })
+  .then((selectedEntry) => {});
+Since 3.1.0
+
+Selecting multiple Entries
+dialogs.selectMultipleEntries(options)
+
+Works similarly to selectSingleEntry, but allows to select multiple entries and the returned promise is resolved with an array of selected entries.
+
+Both locale and contentTypes options can be used. There are two additional options:
+
+min and max - numeric values specifying an inclusive range in which the number of selected entities must be contained
+// display a dialog for selecting multiple entries
+dialogs.selectMultipleEntries().then((arrayOfSelectedEntries) => {});
+
+// select between 1 and 3 (inclusive) entries
+dialogs
+  .selectMultipleEntries({ min: 1, max: 3 })
+  .then((arrayOfSelectedEntries) => {});
+Since 3.1.0
+
+Selecting a single Asset
+dialogs.selectSingleAsset(options)
+
+Counterpart of selectSingleEntry for assets. A contentTypes option is not available.
+
+Since 3.1.0
+
+Selecting multiple Assets
+dialogs.selectMultipleAssets(options)
+
+Counterpart of selectMultipleEntries for assets. A contentTypes option is not available.
+
+Since 3.1.0
+
+Navigator
+sdk.navigator
+
+Exposes methods for navigating between entities stored in a Contentful space.
+
+Opening an existing entry or asset
+navigator.openEntry(entryId, options)
+navigator.openAsset(assetId, options)
+Opens an existing entry or asset in the current web app session. Both entryId and assetId are string identifiers as in the sys.id property of an entity.
+
+options object is optional. The only recognized options are { slideIn: true } or { slideIn: { waitForClose: true } }.
+
+slideIn is only available while editing an entry.
+
+When { slideIn: true } is set, it will open the entity in the slide-in editor over the current entity editor instead of navigating and resolve a promise immediately after slide-in editor is opened.
+
+navigator.openAsset('si29ajxns80', { slideIn: true }).then(({ entity }) => {
+  /* asset was opened in the slide-in editor */
+  /* promise is resolved immediately after slide-in editor is opened */
+});
+When { slideIn: { waitForClose: true } } is set, it will open the entity in the slide-in editor over the current entity editor instead of navigating and resolve a promise only after slide-in editor is closed, so you can get an entry with all the latest changes that were made when editor was open. If the entry is deleted or otherwise made unavailable before the slide-in editor is closed, the entity property will be undefined on the resolved promise.
+
+navigator.openAsset("si29ajxns80", { slideIn: { waitForClose: true }).then(({ entity }) => {
+  /* asset was opened in the slide-in editor and then closed */
+  /* promise is resolved only after slide-in editor is closed, entity object has all latest changes */
+  /* entity is undefined if the entry has been deleted during user interaction */
+})
+Since 3.5.0
+
+Opening the entry or asset list
+navigator.openEntriesList()
+navigator.openAssetsList()
+Opens the Entry or Asset list in the current tab.
+
+Opening the bulk editor
+navigator.openBulkEditor(entryId, options)
+Opens the bulk reference editor for a certain field of an existing entry or in the current web app session.
+
+The options object is required. It must specify the following properties.
+
+options: {
+  /** ID of the reference field */
+  fieldId: string;
+  /** The locale you wish to edit */
+  locale: string;
+  /** The index of the entry that should be focused when the editor opens */
+  index: number;
+}
+Usage:
+
+navigator.openBulkEditor('entry-id', {
+  fieldId: 'field-id',
+  /** Editable locale */
+  locale: 'en-US',
+  /** Focused index */
+  index: 0,
+});
+Receiving notifications when slide in navigation happens
+entry.onSlideInNavigation(callback: (NavigatorSlideInfo => void)): function
+
+NavigatorSlideInfo {
+  newSlideLevel: number
+  oldSlideLevel: number
+}
+Calls the callback with data about the state of the slide in editor when changes in that state occur. You can call the returned function to stop listening to changes.
+
+Opening a new entry or asset
+navigator.openNewEntry(contentTypeId, options)
+navigator.openNewAsset(options)
+Opens a new entry or asset in the current web app session. When opening an entry, contentTypeId string identifier must be provided. options object is optional and has the same effect as in openEntry and openAsset methods.
+
+navigator.openNewEntry('blogPost', { slideIn: true }).then(({ entity }) => {
+  /* new entry of the "blogPost" content type was opened in the slide-in editor */
+});
+Since 3.5.0
+
+Navigating within a page app
+Note: This function is only available in apps and not in UI extensions.
+
+navigator.openCurrentAppPage(options)
+This function enables your page app to inform the browser URL of any state changes within your app that you want to be reflected in your browser history.
+
+Calling openCurrentAppPage without any arguments will navigate you to the root of your page app.
+
+navigator.openCurrentAppPage();
+/* navigated to /app_installations/{app-id} */
+The options parameter is optional and it contains a single property path that is optional as well. Providing it allows you to change the route in the browser URL.
+
+Note: If you provide a path you must prepend it with a slash like in the example below.
+
+navigator.openCurrentAppPage({ path: '/settings' });
+/* navigated to /app_installations/{app-id}/settings */
+
+navigator.openCurrentAppPage({ path: '/settings/features' });
+/* navigated to /app_installations/{app-id}/settings/features */
+openCurrentAppPage returns a promise which provides an object:
+
+  {
+    navigated: bool
+    path: string
+  }
+navigated will be true if the navigation succeeded. path will be a string of the new route and the browser URL will reflect that change.
+
+navigator.openCurrentAppPage({ path: '/settings' }).then((result) => {
+  if (result.navigated && result.path === '/settings') {
+    doSomething();
+  }
+});
+It is also possible to navigate directly to a page app by specifying its id.
+
+// normal URL
+'https://app.contentful.com/spaces/{space-id}/app_installations/{app-id}/';
+
+// URL with environment
+'https://app.contentful.com/spaces/{space-id}/environments/{environment-id}/app_installations/{app-id}/';
+Since 3.13.0
+
+Navigating to an app's config screen
+sdk.navigator.openAppConfig() Will navigate directly to the app's config page. This method can only be used by apps. It will throw an error if it is called in a UI extension.
+
+Since 3.28.0
+
+Notifier
+sdk.notifier
+
+Allows to display notifications.
+
+Displaying notifications
+notifier.success(message)
+notifier.error(message)
+notifier.warning(message) (since 4.4.0)
+Provided with a string message, displays a success (rendered in green), an error (rendered in red) or a warning (rendered in orange) notification in the notification area of the web app.
+
+notifier.success('Settings successfully updated!');
+notifier.error('Something went wrong...');
+notifier.warning('Reload your page to apply your new preferences.');
+Since 3.5.0
+
+Editor
+sdk.editor
+
+Only available in some locations.
+
+Exposes editor interface and provides subscription methods for editor state: locale mode, selected locales, visibility of fields disabled for editing.
+
+Editor Interface
+editor.editorInterface - instance of EditorInterface entity for the content type of the entry being edited
+Getting locale settings
+sdk.editor.getLocaleSettings(): object
+
+Returns the current locale settings. The locale setting can change. To always work with the latest settings, use onLocaleSettingsChanged.
+
+Since 4.x
+
+Receiving notifications about locales settings change
+sdk.editor.onLocaleSettingsChanged(callback): function
+
+Calls the callback every time locale mode (single or multi), active locales or focused locale are changed.
+
+The method returns a function you can call to stop listening to changes.
+
+Example:
+
+function localeSettingsHandler(data) {
+  const { mode, focused, active } = data;
+  if (mode === 'single') {
+    console.log(focused);
+  } else if (mode === 'multi') {
+    console.log(active);
+  }
+}
+const detachHandler = sdk.editor.onLocaleSettingsChanged(localeSettingsHandler);
+active locales: array of locales codes, present in multi mode
+focused locale: currently focused locale code, present in single mode
+Use detachHandler() to unsubscribe.
+
+Getting information whether or not hidden fields are displayed.
+sdk.editor.getShowHiddenFields(): boolean
+
+Returns whether or not hidden fields are displayed. This setting can change. To always work with the latest settings, use onShowHiddenFieldsChanged.
+
+Since 4.16.0
+
+Receiving notifications about changes of visibility of hidden fields
+sdk.editor.onShowHiddenFieldsChanged(callback): function
+
+Calls the callback every time hidden fields’ visibility is changed.
+
+The method returns a function you can call to stop listening to changes.
+
+Example:
+
+function visibilityHandler(visible) {
+  if (visible) {
+    console.log('show hidden fields');
+  } else {
+    console.log('hide hidden fields');
+  }
+}
+const detachHandler = sdk.editor.onShowHiddenFieldsChanged(visibilityHandler);
+Use detachHandler() to unsubscribe.
+
+Since 4.16.0
+
+IDs
+Exposes IDs of entities available in the current context.
+
+Always available:
+
+user - ID of the current user
+space - ID of the current space
+environment - ID of the current environment
+Note that environment is an ID of an environment, but not of an environment alias. Even if you use an environment alias to access your environment, the original environment ID will be given. To understand which alias was used to access the current environment use:
+
+environmentAlias - ID of the currently used environment alias (undefined if accessing an environment directly)
+Available only in entry editor:
+
+entry - ID of the current entry
+contentType - ID of the current content type
+field - ID of the current field
+Only one of the following will be available, depending on the type of the widget running:
+
+app - ID of the current app
+extension - ID of the current extension
+Since 3.8.0
+
+ids.environmentAlias since 3.26.0
+
+Hostnames
+Exposes hostnames to interact with Contentful's API or to link to the web app
+
+delivery - Hostname of the Content Delivery API
+management - Hostname of the Content Management API
+preview - Hostname of the Preview API
+upload - Hostname of the Upload API
+graphql - Hostname of the GraphQL API
+webapp - Hostname of the Web App
+Since 4.23.0
+
+Access
+sdk.access.can(action, typeOrEntity): Promise<boolean>
+
+Returns a promise of true or false indicating if an action can be performed on a specific entity, entity type, or entity field (and locale) by the current user.
+
+Action can be one of:
+
+create
+read
+update
+delete
+publish
+unpublish
+archive
+unarchive
+Supported types are:
+
+ContentType
+EditorInterface
+Entry
+Asset
+Entity objects of these types can also be passed as the second argument to the .can() call.
+
+// can a user create content types?
+sdk.access.can('create', 'ContentType');
+
+// can a user archive entries?
+sdk.access.can('archive', 'Entry');
+
+// Can user update a specific entry field and locale?
+sdk.access.can('update', {
+  sys: {
+    type: 'Entry',
+    id: 'my-entry',
+    contentType: {
+      sys: { id: 'my-content-type', type: 'Link', linkType: 'ContentType' },
+    },
+  },
+  fields: {
+    title: { 'en-US': 'hello!' },
+  },
+});
+
+// can a user create an entry of this specific content type?
+sdk.access.can('create', {
+  sys: {
+    type: 'Entry',
+    contentType: {
+      sys: { id: 'my-content-type', type: 'Link', linkType: 'ContentType' },
+    },
+  },
+});
+Note that the more specific the query is, the more accurate the result will be. Calling sdk.access.can('update', 'Entry') does not necessarily mean the user can edit all entries and their respective fields. It implies the current user is not restricted from editing ALL entries. In case you want to know permissions about a specific entry, by all means pass the exact entity. You can read more about Roles & Permissions here
+
+Also, note that not all entity types support all actions:
+
+Action	Supported entity types
+create	ContentType, Entry, Asset
+read	all
+update	all
+delete	ContentType, Entry, Asset
+publish	ContentType, Entry, Asset
+unpublish	ContentType, Entry, Asset
+archive	Entry, Asset
+unarchive	Entry, Asset
+Since 3.14.0
+
+sdk.access.canEditAppConfig(): Promise<boolean>
+
+Resolves to true or false depending on whether a user has the permissions to edit App configs in the space-environment. This can be used to avoid redirecting unauthorised users with the sdk.navigator.openAppConfig method.
+
+Since 3.29.0
+
+Configuration of an extension with parameters
+sdk.parameters
+
+Exposes extension configuration parameters as defined in the Content Management API reference.
+
+sdk.parameters has the following shape:
+
+{
+  installation: {
+    retries: 10,
+    isDevMode: true
+  },
+  instance: {
+    theme: 'light'
+  }
+}
+You can rely on both sdk.parameters.installation and sdk.parameters.instance being defined. If no parameters were provided they will default to an empty object:
+
+{
+  installation: {},
+  instance: {}
+}
+Since 3.4.0
+
+If your app or extension was opened with dialogs.openCurrent, dialogs.openCurrentApp, or dialogs.openExtension, you can access invocation parameters as parameters.invocation. Invocation parameters are not guaranteed to be defined and depend on the value provided when opening a dialog.
+
+Since 3.6.0
+
+App configuration
+sdk.app
+
+Only available in LOCATION_APP_CONFIG.
+
+Exposes methods useful when building app configuration screens.
+
+Check if an app is installed
+app.isInstalled(): Promise<boolean>
+
+Resolves with true if an app is installed. Resolves with false otherwise.
+
+Since 3.10
+
+Get the current app installation parameters
+app.getParameters(): Promise<Object | null>
+
+Resolves with an object of all app parameters. If an app is not installed yet, it resolves with null.
+
+Since 3.10
+
+Mark an app as loaded
+app.setReady(): void
+
+The Contentful web app will display a generic loading screen until the app calls this method. Once setReady is called, the loading screen is hidden and the app is presented to a user.
+
+If setReady() is not called in 15 seconds we assume the app is broken and display a generic error screen.
+
+Since 3.10
+
+Get the current app state
+app.getCurrentState(): Promise<AppState | null>
+
+Resolves with an object containing the AppState: a data structure defining where the app should be rendered. It has the following shape
+
+{
+  // Defines the locations where the app is rendered
+  EditorInterface: {
+    // App is added as the first (position = 0) editor
+    // in editor list for the content type with ID `ct1`.
+    ct1: { editors: { position: 0 } },
+    // App is rendered in the second slot (position = 1)
+    // of the sidebar for the content type with ID `ct2`.
+    ct2: { sidebar: { position: 1 } },
+    // App shows as a field editor of the content type with ID `ct3`.
+    ct3: {
+      controls: [
+        { fieldId: 'title' },
+        { fieldId: 'subtitle' }
+      ]
+    }
+  }
+}
+This method is useful to preserve the current EditorInterface state upon configuration updates (see next section)
+
+Since 3.18
+
+Register an app configuration hook
+app.onConfigure(cb): void
+
+This method takes a callback function which will be invoked every time when a user clicks either "Install" or "Save" but before an app is installed or updated.
+
+Keep in mind that even though you can call app.onConfigure(cb) as often as you like, only the last handler (cb) will be used by the web app to install your app. Additionally, your handler will be potentially called by the web app more than once.
+
+The callback provided can be synchronous or asynchronous.
+
+If the callback returns false, throws or returns a promise which will be eventually rejected, the process is aborted and no changes are made. This way the app can validate its state and user inputs before continuing.
+
+The callback can return an object or a promise resolving with an object. The object can define parameters and targetState (both are optional):
+
+under the parameters key you should place an object of parameter values to be persisted in the process; they will be available to your app as installation parameters
+under the targetState key you should place a data structure defining where the app should be rendered; omitting the targetState will remove any previous app location configuration.
+For example:
+
+async function onConfigure () {
+  // Get current state
+  // This will be used as base for next state updates
+  const currentState = await sdk.app.getCurrentState();
+
+  // Perform validation.
+  if (!isValid()) {
+    // Current state of the app is not valid.
+    // Notify the user and return `false` so installation
+    // is aborted.
+    sdk.notifier.error("Invalid input - fix it before installing.");
+    return false;
+  }
+
+  // You can call external services, for example to get
+  // some extra inputs or create 3rd party artifacts.
+  const magicNumber = await callMagicNumberApi();
+
+  return {
+    // Persist parameters.
+    parameters: {
+      greeting: userInput.greeting,
+      magicNumber,
+    },
+    targetState: {
+      EditorInterface: {
+        // Use previous EditorInterface as base to not
+        // lose any existing app location configuration
+        ...currentState?.EditorInterface
+        // Render the app on the top (position = 0) of the
+        // sidebar for the content type with ID `ct1`.
+        ct1: { sidebar: { position: 0 } },
+        // Add the app as the first (position = 0) entry
+        // editor in the list for the content type with ID `ct2`.
+        ct2: { editors: { position: 0 } },
+        // Render the app as two field editors of the content
+        // type with ID `ct3` (fields: `title`, `metadata`).
+        ct3: {
+          controls: [{ fieldId: "title" }, { fieldId: "metadata" }],
+        },
+      },
+    },
+  };
+}
+Since 3.10
+
+Register an app post-configuration hook
+app.onConfigurationCompleted(cb): void
+
+Registers cb to be called once the app is installed or updated. cb can be used to perform post-configuration tasks.
+
+If the app failed to install or update, the callback will be called with an error object.
+
+app.onConfigurationCompleted((err) => {
+  if (err) {
+    revertExternalChanges();
+  } else {
+    notifyBackend();
+  }
+});
+Since 3.10
+
+Space
+As of version _4.0.0_, all entities described below are also available through the `contentful-management.js` library, which provides additional methods to interact with the Contentful Management API. The direct use of the Space API, as described below, will soon be removed in favor of the `contentful-management.js` adapter.
+sdk.space
+
+The space object exposes methods that allow the extension to read and manipulate a wide range of objects in the space. Its API mirrors v0.8.x of the contentful-management library, with a few differences.
+
+Note: The space API is independent of the location that the widget is being rendered in, and all methods act on the last saved state. Thus, read or write operations on entry, for example, will not include any unsaved changes in any editors that are currently open.
+
+Content Types of a Space
+Allows operating on the current space's content types. Content types created/updated or deleted this way will immediately be published or unpublished respectively.
+
+space.getContentType(id)
+space.getContentTypes()
+space.createContentType(contentTypeData)
+space.updateContentType(contentTypeData)
+space.deleteContentType(contentTypeData)
+Since 3.10.11
+
+space.getCachedContentTypes()
+Entries of a Space
+space.getEntry(id)
+space.getEntrySnapshots(id)
+space.getEntries(query)
+space.createEntry('content-type-id', entryData)
+space.updateEntry(entryData)
+space.publishEntry(entryData)
+space.unpublishEntry(entryData)
+space.archiveEntry(entryData)
+space.unarchiveEntry(entryData)
+space.deleteEntry(entryData)
+space.getPublishedEntries(query)
+Since 1.0.0 getEntrySnapshots since 3.6.0
+
+Assets of a Space
+space.archiveAsset(assetData)
+space.createAsset(assetData)
+space.createUpload(base64data)
+space.deleteAsset(assetData)
+space.getAsset(id)
+space.getAssets(query)
+space.getPublishedAssets(query)
+space.processAsset(asset, locale)
+space.publishAsset(assetData)
+space.unarchiveAsset(assetData)
+space.unpublishAsset(assetData)
+space.updateAsset(assetData)
+space.waitUntilAssetProcessed(assetId, locale)
+Note that snapshots are not available for assets.
+
+Since 1.0.0 createUpload and waitUntilAssetProcessed since 3.7.0
+
+Tags of a Space
+space.createTag(id, name, visibility)
+space.readTags(skip, limit)
+space.updateTag(id, name, version)
+space.deleteTag(id, version)
+Since 3.33.0
+
+Editor Interface
+space.getEditorInterface(contentTypeId)
+
+Gets a single point editor interface a given content type ID.
+
+Since 3.8.0
+
+space.getEditorInterfaces()
+
+Gets all editor interfaces for all content types of the active environment.
+
+Since 3.10.0
+
+Users of a Space
+space.getUsers()
+
+Returns a promise of all User objects for users who belong to the space.
+
+Since 3.6.0
+
+Scheduled actions
+space.getAllScheduledActions(): Promise<ScheduledAction[]>
+
+Returns a list of scheduled actions for the currenst space & environment.
+
+space.getEntityScheduledActions(entityType: 'Entry' | 'Asset', entityId: string): Promise<ScheduledAction[]>
+
+Returns a list of scheduled actions for a given entity.
+
+Since 3.11.0
+
+Request signing
+space.signRequest(canonicalRequest): Promise<SignatureHeaders>
+
+Returns a map of headers that can be added to a request to make it verifiable by an app backend. Only works when used in apps. The method will throw an error if it is used in a UI extension. Only works when an AppSigningSecret has been provided to the AppDefinition, otherwise an error will be thrown.
+
+See the guide to request verification and the API documentation for submitting signing secrets for more details.
+
+Since 3.25.0

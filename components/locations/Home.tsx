@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
-import { /* useCMA, */ useSDK } from '@contentful/react-apps-toolkit';
+import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 import { CalendarDays, Clock, Edit, FileText } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentTable } from "@/components/content-table"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
+import { getContentStats } from '../../utils/contentful';
+import { Environment } from 'contentful-management';
 
 // Sample data for upcoming releases
 const upcomingReleases = [
@@ -175,11 +177,54 @@ const needsUpdateContent = [
 
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
-  /*
-     To use the cma, inject it as follows.
-     If it is not needed, you can remove the next line.
-  */
-  // const cma = useCMA();
+  const cma = useCMA();
+  const [stats, setStats] = useState({
+    totalPublished: 0,
+    percentChange: 0,
+    scheduledCount: 0,
+    recentlyPublishedCount: 0,
+    needsUpdateCount: 0,
+  });
+
+  useEffect(() => {
+    const fetchContentStats = async () => {
+      try {
+        console.log('Fetching content stats...');
+        const space = await cma.space.get({ spaceId: sdk.ids.space });
+        console.log('Space:', space.name);
+
+        const environment = await cma.environment.get({
+          spaceId: sdk.ids.space,
+          environmentId: sdk.ids.environment
+        });
+        console.log('Environment:', environment.name);
+
+        const entries = await cma.entry.getMany({
+          spaceId: sdk.ids.space,
+          environmentId: sdk.ids.environment
+        });
+        console.log('Total entries:', entries.items.length);
+        console.log('Sample entry:', entries.items[0]);
+        
+        // Get scheduled actions through the CMA client
+        const scheduledActions = await cma.scheduledActions.getMany({
+          spaceId: sdk.ids.space,
+          query: {
+            'environment.sys.id': sdk.ids.environment
+          }
+        });
+        console.log('Scheduled actions:', scheduledActions);
+        
+        const contentStats = await getContentStats(entries, scheduledActions.items);
+        console.log('Calculated stats:', contentStats);
+        setStats(contentStats);
+      } catch (error) {
+        console.error('Error fetching content stats:', error);
+      }
+    };
+
+    fetchContentStats();
+  }, [cma, sdk.ids.space, sdk.ids.environment]);
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -193,8 +238,8 @@ const Home = () => {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">87</div>
-              <p className="text-xs text-muted-foreground">+4% from last month</p>
+              <div className="text-2xl font-bold">{stats.totalPublished}</div>
+              <p className="text-xs text-muted-foreground">{stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month</p>
             </CardContent>
           </Card>
           <Card>
@@ -203,7 +248,7 @@ const Home = () => {
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">24</div>
+              <div className="text-2xl font-bold">{stats.scheduledCount}</div>
               <p className="text-xs text-muted-foreground">For the next 30 days</p>
             </CardContent>
           </Card>
@@ -213,7 +258,7 @@ const Home = () => {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12</div>
+              <div className="text-2xl font-bold">{stats.recentlyPublishedCount}</div>
               <p className="text-xs text-muted-foreground">In the last 7 days</p>
             </CardContent>
           </Card>
@@ -223,7 +268,7 @@ const Home = () => {
               <Edit className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">18</div>
+              <div className="text-2xl font-bold">{stats.needsUpdateCount}</div>
               <p className="text-xs text-muted-foreground">Content older than 6 months</p>
             </CardContent>
           </Card>
