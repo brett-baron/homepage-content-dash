@@ -28,6 +28,7 @@ interface ContentStats {
   scheduledCount: number;
   recentlyPublishedCount: number;
   needsUpdateCount: number;
+  previousMonthPublished: number;
 }
 
 type ContentfulEntry = EntryProps & {
@@ -73,7 +74,7 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   console.log('Previous month published:', previousMonthPublished);
 
   const percentChange = previousMonthPublished === 0 
-    ? 100 
+    ? 0
     : ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
 
   // Get scheduled count (only count 'scheduled' status actions)
@@ -114,5 +115,6 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
     scheduledCount,
     recentlyPublishedCount,
     needsUpdateCount,
+    previousMonthPublished,
   };
 }; 

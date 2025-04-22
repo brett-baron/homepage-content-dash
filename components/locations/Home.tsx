@@ -184,6 +184,7 @@ const Home = () => {
     scheduledCount: 0,
     recentlyPublishedCount: 0,
     needsUpdateCount: 0,
+    previousMonthPublished: 0,
   });
 
   useEffect(() => {
@@ -239,7 +240,11 @@ const Home = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalPublished}</div>
-              <p className="text-xs text-muted-foreground">{stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.previousMonthPublished === 0
+                ? 'No content published last month'
+                : `${stats.percentChange >= 0 ? '+' : ''}${stats.percentChange.toFixed(1)}% from last month`}
+              </p>
             </CardContent>
           </Card>
           <Card>
