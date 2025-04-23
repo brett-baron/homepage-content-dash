@@ -5,11 +5,27 @@ import { CalendarDays, Clock, Edit, FileText } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentTable } from "@/components/content-table"
+import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
 import { getContentStats } from '../../utils/contentful';
 import { Environment } from 'contentful-management';
 
 // Sample data for upcoming releases
+const contentData = [
+  { date: "2023-01-01", count: 4 },
+  { date: "2023-02-01", count: 7 },
+  { date: "2023-03-01", count: 5 },
+  { date: "2023-04-01", count: 10 },
+  { date: "2023-05-01", count: 8 },
+  { date: "2023-06-01", count: 12 },
+  { date: "2023-07-01", count: 15 },
+  { date: "2023-08-01", count: 13 },
+  { date: "2023-09-01", count: 18 },
+  { date: "2023-10-01", count: 20 },
+  { date: "2023-11-01", count: 22 },
+  { date: "2023-12-01", count: 25 },
+]
+
 const upcomingReleases = [
   {
     id: "r1",
@@ -231,7 +247,6 @@ const Home = () => {
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <h1 className="text-2xl font-bold">Content Dashboard</h1>
-
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -278,7 +293,11 @@ const Home = () => {
             </CardContent>
           </Card>
         </div>
-
+        <ContentChart
+            data={contentData}
+            title="Content Publication Trends"
+            description="Monthly content publication metrics for 2024"
+          />
         {/* Upcoming Releases Section */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Upcoming Releases</h2>
