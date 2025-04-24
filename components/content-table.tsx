@@ -18,8 +18,8 @@ interface ContentItem {
 }
 
 interface ContentTableProps {
-  title: string
-  description: string
+  title?: string
+  description?: string
   data: ContentItem[]
   showStage?: boolean
 }
@@ -28,15 +28,17 @@ export function ContentTable({ title, description, data = [], showStage = true }
   return (
     <Card>
       <CardHeader>
+      {(title || description) && (
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          <Button size="sm" variant="outline">
+            <div>
+              {title && <CardTitle>{title}</CardTitle>}
+              {description && <CardDescription>{description}</CardDescription>}
+            </div>
+          {/* <Button size="sm" variant="outline">
             View All
-          </Button>
+          </Button> */}
         </div>
+      )}
       </CardHeader>
       <CardContent>
         <Table>

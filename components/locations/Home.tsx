@@ -7,8 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
-import { getContentStats } from '../../utils/contentful';
-import { Environment } from 'contentful-management';
+import { getContentStats, generateChartData } from '../../utils/contentful';
+import { Environment, CollectionProp, EntryProps } from 'contentful-management';
 
 // Sample data for upcoming releases
 const contentData = [
@@ -202,6 +202,7 @@ const Home = () => {
     needsUpdateCount: 0,
     previousMonthPublished: 0,
   });
+  const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -216,10 +217,55 @@ const Home = () => {
         });
         console.log('Environment:', environment.name);
 
-        const entries = await cma.entry.getMany({
+        // Fetch all entries with pagination
+        let allEntries: EntryProps[] = [];
+        let skip = 0;
+        const limit = 1000; // Maximum allowed by Contentful
+        
+        // First request to get total count
+        const initialResponse = await cma.entry.getMany({
           spaceId: sdk.ids.space,
-          environmentId: sdk.ids.environment
+          environmentId: sdk.ids.environment,
+          query: {
+            limit: 1
+          }
         });
+        
+        const totalEntries = initialResponse.total;
+        console.log(`Total entries in space: ${totalEntries}`);
+        
+        // Fetch all entries in batches
+        while (allEntries.length < totalEntries) {
+          const entriesResponse = await cma.entry.getMany({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment,
+            query: {
+              skip,
+              limit
+            }
+          });
+          
+          allEntries = [...allEntries, ...entriesResponse.items];
+          console.log(`Fetched ${allEntries.length} of ${totalEntries} entries`);
+          
+          skip += limit;
+          
+          // Safety check to prevent infinite loops
+          if (entriesResponse.items.length === 0) {
+            console.warn('Received empty response despite not reaching total count');
+            break;
+          }
+        }
+        
+        // Create a properly typed CollectionProp object
+        const entries: CollectionProp<EntryProps> = {
+          items: allEntries,
+          total: allEntries.length,
+          sys: { type: 'Array' },
+          skip: 0,
+          limit: allEntries.length
+        };
+        
         console.log('Total entries:', entries.items.length);
         console.log('Sample entry:', entries.items[0]);
         
@@ -235,6 +281,11 @@ const Home = () => {
         const contentStats = await getContentStats(entries, scheduledActions.items);
         console.log('Calculated stats:', contentStats);
         setStats(contentStats);
+        
+        // Generate chart data from entries
+        const chartDataFromEntries = generateChartData(entries);
+        console.log('Chart data:', chartDataFromEntries);
+        setChartData(chartDataFromEntries);
       } catch (error) {
         console.error('Error fetching content stats:', error);
       }
@@ -258,7 +309,11 @@ const Home = () => {
               <p className="text-xs text-muted-foreground">
                 {stats.previousMonthPublished === 0
                 ? 'No content published last month'
-                : `${stats.percentChange >= 0 ? '+' : ''}${stats.percentChange.toFixed(1)}% from last month`}
+                : (
+                  <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
+                    {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month
+                  </span>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -294,16 +349,14 @@ const Home = () => {
           </Card>
         </div>
         <ContentChart
-            data={contentData}
+            data={chartData.length > 0 ? chartData : contentData}
             title="Content Publication Trends"
-            description="Monthly content publication metrics for 2024"
+            description="Monthly content publication metrics from your Contentful space"
           />
         {/* Upcoming Releases Section */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Upcoming Releases</h2>
           <ContentTable
-            title="Content Scheduled for Release"
-            description="High-priority content scheduled for imminent release"
             data={upcomingReleases}
             showStage={true}
           />
@@ -318,7 +371,6 @@ const Home = () => {
           <TabsContent value="scheduled" className="space-y-4">
             <ContentTable
               title="Upcoming Scheduled Content"
-              description="Content scheduled for publication in the next 30 days."
               data={upcomingContent}
               showStage={true}
             />
@@ -326,7 +378,6 @@ const Home = () => {
           <TabsContent value="published" className="space-y-4">
             <ContentTable
               title="Recently Published Content"
-              description="Content published in the last 30 days."
               data={recentlyPublishedContent}
               showStage={false}
             />
@@ -334,7 +385,6 @@ const Home = () => {
           <TabsContent value="update" className="space-y-4">
             <ContentTable
               title="Content Needing Updates"
-              description="Content that was published more than 6 months ago and needs review."
               data={needsUpdateContent}
               showStage={false}
             />

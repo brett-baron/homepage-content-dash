@@ -117,4 +117,68 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
     needsUpdateCount,
     previousMonthPublished,
   };
+};
+
+export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number }> => {
+  // Get published entries
+  const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
+    return entry.sys.publishedAt;
+  });
+
+  // Group entries by month
+  const entriesByMonth: Record<string, number> = {};
+  
+  publishedEntries.forEach((entry: ContentfulEntry) => {
+    if (entry.sys.publishedAt) {
+      const publishDate = new Date(entry.sys.publishedAt);
+      // Format as YYYY-MM-01 to group by month
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      entriesByMonth[monthKey] = (entriesByMonth[monthKey] || 0) + 1;
+    }
+  });
+
+  // Convert to array format for chart
+  const chartData = Object.entries(entriesByMonth)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // If we have data, ensure we have at least 12 months of data
+  if (chartData.length > 0) {
+    const now = new Date();
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    
+    // Use the earliest date between 12 months ago and the first entry date
+    const firstDate = new Date(Math.min(
+      twelveMonthsAgo.getTime(),
+      new Date(chartData[0].date).getTime()
+    ));
+    
+    // Use the latest date between now and the last entry date
+    const lastDate = new Date(Math.max(
+      now.getTime(),
+      new Date(chartData[chartData.length - 1].date).getTime()
+    ));
+    
+    // Create a complete array of months between first and last date
+    const completeData: Array<{ date: string; count: number }> = [];
+    let currentDate = new Date(firstDate);
+    
+    while (currentDate <= lastDate) {
+      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+      const existingData = chartData.find(item => item.date === monthKey);
+      
+      completeData.push({
+        date: monthKey,
+        count: existingData ? existingData.count : 0
+      });
+      
+      // Move to next month
+      currentDate.setMonth(currentDate.getMonth() + 1);
+    }
+    
+    return completeData;
+  }
+  
+  return chartData;
 }; 

@@ -51,7 +51,6 @@ export default function ContentChart({
                 padding: "0.75rem",
               }}
             />
-            <Legend wrapperStyle={{ paddingTop: "1rem" }} />
             <Line
               type="monotone"
               dataKey="count"
