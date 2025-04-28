@@ -278,7 +278,6 @@ const Home = () => {
           query: {
             'environment.sys.id': sdk.ids.environment,
             'sys.status[in]': 'scheduled',
-            'entity.sys.linkType[in]': 'Release',
             'order': 'scheduledFor.datetime',
             'limit': 500
           }
@@ -305,6 +304,24 @@ const Home = () => {
             
             const releases = await Promise.all(releasesPromises);
             
+            // Attach release data to the corresponding scheduled actions
+            scheduledActions.items = scheduledActions.items.map(action => {
+              if (action.entity.sys.linkType === 'Release') {
+                const release = releases.find(r => r.sys.id === action.entity.sys.id);
+                if (release) {
+                  return {
+                    ...action,
+                    release: {
+                      entities: {
+                        items: release.entities.items
+                      }
+                    }
+                  };
+                }
+              }
+              return action;
+            });
+
             // Get unique user IDs from releases
             const userIds = new Set(releases.map(release => release.sys.updatedBy.sys.id));
             
@@ -423,6 +440,26 @@ const Home = () => {
     });
   };
 
+  const handleRescheduleRelease = async (releaseId: string, newDateTime: string) => {
+    // Refresh the releases data after rescheduling
+    const updatedReleases = scheduledReleases.map(release => {
+      if (release.id === releaseId) {
+        return {
+          ...release,
+          scheduledDateTime: newDateTime,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return release;
+    });
+    setScheduledReleases(updatedReleases);
+  };
+
+  const handleCancelRelease = async (releaseId: string) => {
+    // Remove the canceled release from the list
+    setScheduledReleases(prev => prev.filter(release => release.id !== releaseId));
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -480,16 +517,17 @@ const Home = () => {
         <ContentChart
           data={chartData.length > 0 ? chartData : contentData}
           title="Content Publication Trends"
-          description="Monthly content publication metrics from your Contentful space"
         />
         {/* Upcoming Releases Section */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Upcoming Releases</h2>
+        <div className="flex flex-col gap-2 md:gap-4">
+          <h2 className="text-xl font-semibold">Upcoming Scheduled Releases</h2>
           <ContentTable
             data={scheduledReleases}
             showItemCount={true}
             showUpdatedAt={true}
             showUpdatedBy={true}
+            onReschedule={handleRescheduleRelease}
+            onCancel={handleCancelRelease}
           />
         </div>
 

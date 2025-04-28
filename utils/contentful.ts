@@ -20,6 +20,16 @@ interface ScheduledAction {
       id: string;
     };
   };
+  release?: {
+    entities: {
+      items: Array<{
+        sys: {
+          id: string;
+          type: string;
+        };
+      }>;
+    };
+  };
 }
 
 interface ContentStats {
@@ -77,21 +87,40 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
     ? 0
     : ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
 
-  // Get scheduled count (only count 'scheduled' status actions)
+  // Get scheduled count - including both individual entries and entries in releases
   console.log('Processing scheduled actions:', actions?.length);
   console.log('Sample action:', actions?.[0]);
 
-  const scheduledCount = actions?.filter((action: ScheduledAction) => {
-    // Only count actions that:
+  // Track unique entry IDs that are scheduled
+  const scheduledEntryIds = new Set<string>();
+
+  actions?.forEach((action: ScheduledAction) => {
+    // Only process actions that:
     // 1. Have status 'scheduled'
     // 2. Are scheduled for the future
     // 3. Are publish actions
-    return action.sys.status === 'scheduled' && 
-           new Date(action.scheduledFor.datetime) > now &&
-           action.action === 'publish';
-  }).length ?? 0;
+    if (action.sys.status === 'scheduled' && 
+        new Date(action.scheduledFor.datetime) > now &&
+        action.action === 'publish') {
+      
+      if (action.entity.sys.linkType === 'Entry') {
+        // Individual scheduled entry
+        scheduledEntryIds.add(action.entity.sys.id);
+      } else if (action.entity.sys.linkType === 'Release') {
+        // For releases, we need to add all entries that are part of the release
+        // The entries should be available in the release entities
+        const releaseEntities = action.release?.entities?.items || [];
+        releaseEntities.forEach((entity: any) => {
+          if (entity.sys?.id) {
+            scheduledEntryIds.add(entity.sys.id);
+          }
+        });
+      }
+    }
+  });
 
-  console.log('Scheduled count:', scheduledCount);
+  const scheduledCount = scheduledEntryIds.size;
+  console.log('Total scheduled entries:', scheduledCount);
 
   // Get recently published count (last 7 days)
   const recentlyPublishedCount = publishedEntries.filter((entry: ContentfulEntry) => {

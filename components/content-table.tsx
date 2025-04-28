@@ -1,11 +1,28 @@
-import { MoreHorizontal } from "lucide-react"
+import { useSDK } from '@contentful/react-apps-toolkit';
+import { useCMA } from '@contentful/react-apps-toolkit';
+import { HomeAppSDK } from '@contentful/app-sdk';
+import { Datepicker } from '@contentful/f36-datepicker';
+import { 
+  Box, 
+  Flex, 
+  FormControl, 
+  Select,
+  Modal,
+  Button,
+  Card,
+  Badge,
+  Table,
+  IconButton,
+  Menu,
+  Text,
+  Subheading,
+  TextInput,
+  Form,
+  Autocomplete
+} from '@contentful/f36-components';
+import { MoreHorizontalIcon } from '@contentful/f36-icons';
 import Link from "next/link"
-
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useState } from "react"
 
 interface ContentItem {
   id: string
@@ -35,6 +52,8 @@ interface ContentTableProps {
   showItemCount?: boolean
   showUpdatedAt?: boolean
   showUpdatedBy?: boolean
+  onReschedule?: (releaseId: string, newDateTime: string) => Promise<void>
+  onCancel?: (releaseId: string) => Promise<void>
 }
 
 const formatDateTime = (dateTimeStr: string) => {
@@ -62,118 +81,412 @@ export function ContentTable({
   showStage = false,
   showItemCount = false,
   showUpdatedAt = false,
-  showUpdatedBy = false
+  showUpdatedBy = false,
+  onReschedule,
+  onCancel
 }: ContentTableProps) {
+  const sdk = useSDK<HomeAppSDK>();
+  const cma = useCMA();
+  const [selectedRelease, setSelectedRelease] = useState<ScheduledRelease | null>(null);
+  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedTime, setSelectedTime] = useState("12:00 PM");
+  const [selectedTimezone, setSelectedTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [isLoading, setIsLoading] = useState(false);
+
   // Check if the data is ScheduledRelease[]
   const isScheduledReleaseData = data.length > 0 && 'scheduledDateTime' in data[0];
 
+  const handleViewRelease = (release: ScheduledRelease) => {
+    const baseUrl = 'https://launch.contentful.com';
+    const url = `${baseUrl}/spaces/${sdk.ids.space}/releases/${release.id}`;
+    window.open(url, '_blank');
+  };
+
+  const handleRescheduleRelease = async (release: ScheduledRelease) => {
+    setSelectedRelease(release);
+    const date = new Date(release.scheduledDateTime);
+    setSelectedDate(date);
+    
+    // Format time in 12-hour format with AM/PM
+    const timeStr = date.toLocaleTimeString('en-US', { 
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    setSelectedTime(timeStr);
+    
+    setIsRescheduleModalOpen(true);
+  };
+
+  const handleRescheduleConfirm = async () => {
+    if (!selectedRelease || !selectedDate) return;
+    
+    setIsLoading(true);
+    try {
+      // Get the scheduled action for this release
+      const scheduledActions = await cma.scheduledActions.getMany({
+        spaceId: sdk.ids.space,
+        query: {
+          'entity.sys.id': selectedRelease.id,
+          'environment.sys.id': sdk.ids.environment
+        }
+      });
+
+      const action = scheduledActions.items[0];
+      if (!action) throw new Error('No scheduled action found for this release');
+
+      // Parse the time in 12-hour format
+      const [time, period] = selectedTime.split(' ');
+      const [hours, minutes] = time.split(':');
+      let hour24 = parseInt(hours, 10);
+      
+      // Convert to 24-hour format
+      if (period.toUpperCase() === 'PM' && hour24 !== 12) {
+        hour24 += 12;
+      } else if (period.toUpperCase() === 'AM' && hour24 === 12) {
+        hour24 = 0;
+      }
+
+      // Create a new Date object with the selected date and time
+      const newDate = new Date(selectedDate);
+      newDate.setHours(hour24, parseInt(minutes, 10), 0, 0);
+
+      // Format the date in ISO 8601 format
+      const isoDate = newDate.toISOString();
+      
+      // Update the scheduled action with new datetime
+      // Only include the required fields in the update payload
+      await cma.scheduledActions.update(
+        {
+          spaceId: sdk.ids.space,
+          version: action.sys.version,
+          scheduledActionId: action.sys.id
+        },
+        {
+          entity: action.entity,
+          environment: action.environment,
+          scheduledFor: {
+            datetime: isoDate
+          },
+          action: action.action
+        }
+      );
+
+      setIsRescheduleModalOpen(false);
+      if (onReschedule) {
+        await onReschedule(selectedRelease.id, isoDate);
+      }
+    } catch (error) {
+      console.error('Error rescheduling release:', error);
+      sdk.notifier.error('Failed to reschedule release. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelRelease = async (release: ScheduledRelease) => {
+    setSelectedRelease(release);
+    setIsCancelModalOpen(true);
+  };
+
+  const handleCancelConfirm = async () => {
+    if (!selectedRelease) return;
+    
+    setIsLoading(true);
+    try {
+      // Get the scheduled action for this release
+      const scheduledActions = await cma.scheduledActions.getMany({
+        spaceId: sdk.ids.space,
+        query: {
+          'entity.sys.id': selectedRelease.id,
+          'environment.sys.id': sdk.ids.environment
+        }
+      });
+
+      const action = scheduledActions.items[0];
+      if (!action) throw new Error('No scheduled action found for this release');
+
+      // Delete the scheduled action
+      await cma.scheduledActions.delete({
+        spaceId: sdk.ids.space,
+        scheduledActionId: action.sys.id
+      });
+
+      if (onCancel) {
+        await onCancel(selectedRelease.id);
+      }
+      setIsCancelModalOpen(false);
+    } catch (error) {
+      console.error('Error canceling release:', error);
+      sdk.notifier.error('Failed to cancel release. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <Card>
-      <CardHeader>
+    <>
+      <Card>
         {(title || description) && (
-          <div className="flex items-center justify-between">
-            <div>
-              {title && <CardTitle>{title}</CardTitle>}
-              {description && <CardDescription>{description}</CardDescription>}
-            </div>
-          </div>
+          <Box padding="spacingM">
+            {title && <Subheading marginBottom="spacingXs">{title}</Subheading>}
+            {description && <Text>{description}</Text>}
+          </Box>
         )}
-      </CardHeader>
-      <CardContent>
         <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Title</TableHead>
+          <Table.Head>
+            <Table.Row>
+              <Table.Cell>Title</Table.Cell>
               {isScheduledReleaseData ? (
                 <>
-                  <TableHead>Scheduled Date & Time</TableHead>
-                  <TableHead>Status</TableHead>
-                  {showItemCount && <TableHead>Items</TableHead>}
-                  {showUpdatedAt && <TableHead>Last Updated</TableHead>}
-                  {showUpdatedBy && <TableHead>Last Updated By</TableHead>}
+                  <Table.Cell>Scheduled Date & Time</Table.Cell>
+                  <Table.Cell>Status</Table.Cell>
+                  {showItemCount && <Table.Cell>Items</Table.Cell>}
+                  {showUpdatedAt && <Table.Cell>Last Updated</Table.Cell>}
+                  {showUpdatedBy && <Table.Cell>Last Updated By</Table.Cell>}
                 </>
               ) : (
                 <>
-                  <TableHead>Author</TableHead>
-                  {showStage && <TableHead>Stage</TableHead>}
-                  <TableHead>Workflow</TableHead>
-                  <TableHead>Date</TableHead>
+                  <Table.Cell>Author</Table.Cell>
+                  {showStage && <Table.Cell>Stage</Table.Cell>}
+                  <Table.Cell>Workflow</Table.Cell>
+                  <Table.Cell>Date</Table.Cell>
                 </>
               )}
-              <TableHead className="w-[50px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+              <Table.Cell></Table.Cell>
+            </Table.Row>
+          </Table.Head>
+          <Table.Body>
             {data.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-medium">
+              <Table.Row key={item.id}>
+                <Table.Cell>
                   <Link href="#" className="hover:underline">
                     {item.title}
                   </Link>
-                </TableCell>
+                </Table.Cell>
                 {isScheduledReleaseData ? (
                   <>
-                    <TableCell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{item.status}</Badge>
-                    </TableCell>
+                    <Table.Cell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</Table.Cell>
+                    <Table.Cell>
+                      <Badge variant="primary">{item.status}</Badge>
+                    </Table.Cell>
                     {showItemCount && (
-                      <TableCell>{(item as ScheduledRelease).itemCount} items</TableCell>
+                      <Table.Cell>{(item as ScheduledRelease).itemCount} items</Table.Cell>
                     )}
                     {showUpdatedAt && (
-                      <TableCell>{formatDateTime((item as ScheduledRelease).updatedAt)}</TableCell>
+                      <Table.Cell>{formatDateTime((item as ScheduledRelease).updatedAt)}</Table.Cell>
                     )}
                     {showUpdatedBy && (
-                      <TableCell>{(item as ScheduledRelease).updatedBy}</TableCell>
+                      <Table.Cell>{(item as ScheduledRelease).updatedBy}</Table.Cell>
                     )}
                   </>
                 ) : (
                   <>
-                    <TableCell>{(item as ContentItem).author}</TableCell>
+                    <Table.Cell>{(item as ContentItem).author}</Table.Cell>
                     {showStage && (
-                      <TableCell>
+                      <Table.Cell>
                         <Badge
                           variant={
                             (item as ContentItem).stage === "Published"
-                              ? "default"
+                              ? "positive"
                               : (item as ContentItem).stage === "Needs Update"
-                                ? "destructive"
+                                ? "negative"
                                 : (item as ContentItem).stage === "Ready to Publish" ||
                                     (item as ContentItem).stage === "Scheduled" ||
                                     (item as ContentItem).stage === "Ready to Launch"
-                                  ? "outline"
+                                  ? "primary"
                                   : "secondary"
                           }
                         >
                           {(item as ContentItem).stage}
                         </Badge>
-                      </TableCell>
+                      </Table.Cell>
                     )}
-                    <TableCell>{(item as ContentItem).workflow}</TableCell>
-                    <TableCell>{formatDate((item as ContentItem).date)}</TableCell>
+                    <Table.Cell>{(item as ContentItem).workflow}</Table.Cell>
+                    <Table.Cell>{formatDate((item as ContentItem).date)}</Table.Cell>
                   </>
                 )}
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Actions</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>View</DropdownMenuItem>
-                      {!isScheduledReleaseData && <DropdownMenuItem>Edit</DropdownMenuItem>}
-                      {isScheduledReleaseData && <DropdownMenuItem>Reschedule</DropdownMenuItem>}
-                      {isScheduledReleaseData && <DropdownMenuItem className="text-red-600">Cancel Release</DropdownMenuItem>}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
+                <Table.Cell>
+                  <Menu>
+                    <Menu.Trigger>
+                      <IconButton
+                        variant="transparent"
+                        icon={<MoreHorizontalIcon />}
+                        aria-label="Actions"
+                        isDisabled={isLoading}
+                      />
+                    </Menu.Trigger>
+                    {isScheduledReleaseData ? (
+                      <Menu.List>
+                        <Menu.Item onClick={() => handleViewRelease(item as ScheduledRelease)}>
+                          View
+                        </Menu.Item>
+                        <Menu.Item onClick={() => handleRescheduleRelease(item as ScheduledRelease)}>
+                          Reschedule
+                        </Menu.Item>
+                        <Menu.Item 
+                          onClick={() => handleCancelRelease(item as ScheduledRelease)}
+                        >
+                          Cancel Release
+                        </Menu.Item>
+                      </Menu.List>
+                    ) : (
+                      <Menu.List>
+                        <Menu.Item>Edit</Menu.Item>
+                      </Menu.List>
+                    )}
+                  </Menu>
+                </Table.Cell>
+              </Table.Row>
             ))}
-          </TableBody>
+          </Table.Body>
         </Table>
-      </CardContent>
-    </Card>
+      </Card>
+
+      <Modal
+        isShown={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+      >
+        {() => (
+          <Box>
+            <Modal.Header 
+              title="Cancel Release" 
+              onClose={() => setIsCancelModalOpen(false)} 
+            />
+            <Modal.Content>
+              <Text>
+                Are you sure you want to cancel this release? This action cannot be undone.
+              </Text>
+            </Modal.Content>
+            <Modal.Controls>
+              <Button
+                variant="secondary"
+                onClick={() => setIsCancelModalOpen(false)}
+                isDisabled={isLoading}
+              >
+                No, keep release
+              </Button>
+              <Button
+                variant="negative"
+                onClick={handleCancelConfirm}
+                isDisabled={isLoading}
+                isLoading={isLoading}
+              >
+                Yes, cancel release
+              </Button>
+            </Modal.Controls>
+          </Box>
+        )}
+      </Modal>
+
+      <Modal
+        isShown={isRescheduleModalOpen}
+        onClose={() => setIsRescheduleModalOpen(false)}
+      >
+        {() => (
+          <Box>
+            <Modal.Header title="Reschedule Release" onClose={() => setIsRescheduleModalOpen(false)} />
+            <Modal.Content>
+              <Flex flexDirection="column" gap="spacingM">
+                <FormControl>
+                  <FormControl.Label>Date</FormControl.Label>
+                  <Datepicker
+                    selected={selectedDate || undefined}
+                    onSelect={(date: Date | undefined) => setSelectedDate(date || null)}
+                    dateFormat="dd MMM yyyy"
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormControl.Label>Time</FormControl.Label>
+                  <div className="relative">
+                    <TextInput
+                      value={selectedTime}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const timeRegex = /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/i;
+                        if (timeRegex.test(value) || value === '') {
+                          setSelectedTime(value.toUpperCase());
+                        }
+                      }}
+                      placeholder="Select or type a time (e.g. 8:00 PM)"
+                    />
+                    <Menu>
+                      <Menu.Trigger>
+                        <IconButton
+                          variant="transparent"
+                          icon={<MoreHorizontalIcon />}
+                          aria-label="Select time"
+                          className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                        />
+                      </Menu.Trigger>
+                      <Menu.List className="max-h-60 overflow-y-auto">
+                        {Array.from({ length: 48 }).map((_, i) => {
+                          const hour = Math.floor(i / 2);
+                          const minute = (i % 2) * 30;
+                          const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                          const period = hour >= 12 ? 'PM' : 'AM';
+                          const time = `${hour12}:${minute.toString().padStart(2, '0')} ${period}`;
+                          return (
+                            <Menu.Item
+                              key={time}
+                              onClick={() => setSelectedTime(time)}
+                            >
+                              {time}
+                            </Menu.Item>
+                          );
+                        })}
+                      </Menu.List>
+                    </Menu>
+                  </div>
+                </FormControl>
+
+                <FormControl>
+                  <FormControl.Label>Timezone</FormControl.Label>
+                  <Select
+                    value={selectedTimezone}
+                    onChange={(e) => setSelectedTimezone(e.target.value)}
+                  >
+                    {Intl.supportedValuesOf('timeZone').map((tz) => {
+                      // Get UTC offset for the timezone
+                      const date = new Date();
+                      const utcOffset = new Intl.DateTimeFormat('en-US', {
+                        timeZone: tz,
+                        timeZoneName: 'longOffset'
+                      }).format(date).split(' ').pop();
+                      
+                      return (
+                        <Select.Option key={tz} value={tz}>
+                          {`${tz} (${utcOffset})`}
+                        </Select.Option>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+              </Flex>
+            </Modal.Content>
+            <Modal.Controls>
+              <Button
+                variant="secondary"
+                onClick={() => setIsRescheduleModalOpen(false)}
+                isDisabled={isLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleRescheduleConfirm}
+                isDisabled={isLoading || !selectedDate}
+                isLoading={isLoading}
+              >
+                Save Changes
+              </Button>
+            </Modal.Controls>
+          </Box>
+        )}
+      </Modal>
+    </>
   )
 }
