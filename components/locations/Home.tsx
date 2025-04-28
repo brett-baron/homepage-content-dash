@@ -5,11 +5,27 @@ import { CalendarDays, Clock, Edit, FileText } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentTable } from "@/components/content-table"
+import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
-import { getContentStats } from '../../utils/contentful';
-import { Environment } from 'contentful-management';
+import { getContentStats, generateChartData } from '../../utils/contentful';
+import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 
 // Sample data for upcoming releases
+const contentData = [
+  { date: "2023-01-01", count: 4 },
+  { date: "2023-02-01", count: 7 },
+  { date: "2023-03-01", count: 5 },
+  { date: "2023-04-01", count: 10 },
+  { date: "2023-05-01", count: 8 },
+  { date: "2023-06-01", count: 12 },
+  { date: "2023-07-01", count: 15 },
+  { date: "2023-08-01", count: 13 },
+  { date: "2023-09-01", count: 18 },
+  { date: "2023-10-01", count: 20 },
+  { date: "2023-11-01", count: 22 },
+  { date: "2023-12-01", count: 25 },
+]
+
 const upcomingReleases = [
   {
     id: "r1",
@@ -175,6 +191,28 @@ const needsUpdateContent = [
   },
 ]
 
+interface ScheduledRelease {
+  id: string;
+  title: string;
+  scheduledDateTime: string;
+  status: string;
+  itemCount: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+interface UserCache {
+  [key: string]: string;  // userId -> user's full name
+}
+
+// Update the ContentTable component props to match the new structure
+interface ContentTableProps {
+  data: ScheduledRelease[];
+  showItemCount?: boolean;
+  showUpdatedAt?: boolean;
+  showUpdatedBy?: boolean;
+}
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -186,6 +224,40 @@ const Home = () => {
     needsUpdateCount: 0,
     previousMonthPublished: 0,
   });
+  const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
+  const [scheduledReleases, setScheduledReleases] = useState<ScheduledRelease[]>([]);
+  const [userCache, setUserCache] = useState<UserCache>({});
+
+  // Function to get user's full name
+  const getUserFullName = async (userId: string): Promise<string> => {
+    // Check cache first
+    if (userCache[userId]) {
+      return userCache[userId];
+    }
+
+    try {
+      // Fetch user data using getForSpace method
+      const user = await cma.user.getForSpace({
+        spaceId: sdk.ids.space,
+        userId
+      });
+      
+      const fullName = user.firstName && user.lastName 
+        ? `${user.firstName} ${user.lastName}`
+        : user.email || userId;
+
+      // Update cache
+      setUserCache(prev => ({
+        ...prev,
+        [userId]: fullName
+      }));
+
+      return fullName;
+    } catch (error) {
+      console.error(`Error fetching user data for ${userId}:`, error);
+      return userId; // Fallback to ID if fetch fails
+    }
+  };
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -200,25 +272,154 @@ const Home = () => {
         });
         console.log('Environment:', environment.name);
 
-        const entries = await cma.entry.getMany({
-          spaceId: sdk.ids.space,
-          environmentId: sdk.ids.environment
-        });
-        console.log('Total entries:', entries.items.length);
-        console.log('Sample entry:', entries.items[0]);
-        
-        // Get scheduled actions through the CMA client
+        // Fetch scheduled actions for releases
         const scheduledActions = await cma.scheduledActions.getMany({
           spaceId: sdk.ids.space,
           query: {
-            'environment.sys.id': sdk.ids.environment
+            'environment.sys.id': sdk.ids.environment,
+            'sys.status[in]': 'scheduled',
+            'order': 'scheduledFor.datetime',
+            'limit': 500
           }
         });
         console.log('Scheduled actions:', scheduledActions);
+
+        // Extract release IDs from scheduled actions
+        const releaseIds = scheduledActions.items
+          .filter(action => action.entity.sys.linkType === 'Release')
+          .map(action => action.entity.sys.id);
+
+        // If we have release IDs, fetch the release details
+        let releasesData: ScheduledRelease[] = [];
+        if (releaseIds.length > 0) {
+          try {
+            // Fetch each release individually since there's no getMany method
+            const releasesPromises = releaseIds.map(releaseId => 
+              cma.release.get({
+                spaceId: sdk.ids.space,
+                environmentId: sdk.ids.environment,
+                releaseId
+              })
+            );
+            
+            const releases = await Promise.all(releasesPromises);
+            
+            // Attach release data to the corresponding scheduled actions
+            scheduledActions.items = scheduledActions.items.map(action => {
+              if (action.entity.sys.linkType === 'Release') {
+                const release = releases.find(r => r.sys.id === action.entity.sys.id);
+                if (release) {
+                  return {
+                    ...action,
+                    release: {
+                      entities: {
+                        items: release.entities.items
+                      }
+                    }
+                  };
+                }
+              }
+              return action;
+            });
+
+            // Get unique user IDs from releases
+            const userIds = new Set(releases.map(release => release.sys.updatedBy.sys.id));
+            
+            // Fetch user data in parallel
+            const userPromises = Array.from(userIds).map(userId => getUserFullName(userId));
+            const userNames = await Promise.all(userPromises);
+            
+            // Create a map of user IDs to names
+            const userMap = Object.fromEntries(
+              Array.from(userIds).map((id, index) => [id, userNames[index]])
+            );
+            
+            // Combine release data with scheduled action data and user names
+            releasesData = releases.map(release => {
+              const scheduledAction = scheduledActions.items.find(
+                action => action.entity.sys.id === release.sys.id
+              );
+              return {
+                id: release.sys.id,
+                title: release.title,
+                scheduledDateTime: scheduledAction?.scheduledFor.datetime || new Date().toISOString(),
+                status: 'Scheduled',
+                itemCount: release.entities.items.length,
+                updatedAt: release.sys.updatedAt,
+                updatedBy: userMap[release.sys.updatedBy.sys.id] || release.sys.updatedBy.sys.id
+              };
+            });
+
+            // Sort by scheduled date
+            releasesData.sort((a, b) => new Date(a.scheduledDateTime).getTime() - new Date(b.scheduledDateTime).getTime());
+          } catch (error) {
+            console.error('Error fetching releases:', error);
+          }
+        }
+        
+        setScheduledReleases(releasesData);
+        console.log('Releases data:', releasesData);
+
+        // Fetch all entries with pagination
+        let allEntries: EntryProps[] = [];
+        let skip = 0;
+        const limit = 1000; // Maximum allowed by Contentful
+        
+        // First request to get total count
+        const initialResponse = await cma.entry.getMany({
+          spaceId: sdk.ids.space,
+          environmentId: sdk.ids.environment,
+          query: {
+            limit: 1
+          }
+        });
+        
+        const totalEntries = initialResponse.total;
+        console.log(`Total entries in space: ${totalEntries}`);
+        
+        // Fetch all entries in batches
+        while (allEntries.length < totalEntries) {
+          const entriesResponse = await cma.entry.getMany({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment,
+            query: {
+              skip,
+              limit
+            }
+          });
+          
+          allEntries = [...allEntries, ...entriesResponse.items];
+          console.log(`Fetched ${allEntries.length} of ${totalEntries} entries`);
+          
+          skip += limit;
+          
+          // Safety check to prevent infinite loops
+          if (entriesResponse.items.length === 0) {
+            console.warn('Received empty response despite not reaching total count');
+            break;
+          }
+        }
+        
+        // Create a properly typed CollectionProp object
+        const entries: CollectionProp<EntryProps> = {
+          items: allEntries,
+          total: allEntries.length,
+          sys: { type: 'Array' },
+          skip: 0,
+          limit: allEntries.length
+        };
+        
+        console.log('Total entries:', entries.items.length);
+        console.log('Sample entry:', entries.items[0]);
         
         const contentStats = await getContentStats(entries, scheduledActions.items);
         console.log('Calculated stats:', contentStats);
         setStats(contentStats);
+        
+        // Generate chart data from entries
+        const chartDataFromEntries = generateChartData(entries);
+        console.log('Chart data:', chartDataFromEntries);
+        setChartData(chartDataFromEntries);
       } catch (error) {
         console.error('Error fetching content stats:', error);
       }
@@ -227,11 +428,42 @@ const Home = () => {
     fetchContentStats();
   }, [cma, sdk.ids.space, sdk.ids.environment]);
 
+  const formatDateTime = (dateTimeStr: string) => {
+    const date = new Date(dateTimeStr);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+  };
+
+  const handleRescheduleRelease = async (releaseId: string, newDateTime: string) => {
+    // Refresh the releases data after rescheduling
+    const updatedReleases = scheduledReleases.map(release => {
+      if (release.id === releaseId) {
+        return {
+          ...release,
+          scheduledDateTime: newDateTime,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return release;
+    });
+    setScheduledReleases(updatedReleases);
+  };
+
+  const handleCancelRelease = async (releaseId: string) => {
+    // Remove the canceled release from the list
+    setScheduledReleases(prev => prev.filter(release => release.id !== releaseId));
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <h1 className="text-2xl font-bold">Content Dashboard</h1>
-
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -243,7 +475,11 @@ const Home = () => {
               <p className="text-xs text-muted-foreground">
                 {stats.previousMonthPublished === 0
                 ? 'No content published last month'
-                : `${stats.percentChange >= 0 ? '+' : ''}${stats.percentChange.toFixed(1)}% from last month`}
+                : (
+                  <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
+                    {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month
+                  </span>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -278,15 +514,20 @@ const Home = () => {
             </CardContent>
           </Card>
         </div>
-
+        <ContentChart
+          data={chartData.length > 0 ? chartData : contentData}
+          title="Content Publication Trends"
+        />
         {/* Upcoming Releases Section */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Upcoming Releases</h2>
+        <div className="flex flex-col gap-2 md:gap-4">
+          <h2 className="text-xl font-semibold">Upcoming Scheduled Releases</h2>
           <ContentTable
-            title="Content Scheduled for Release"
-            description="High-priority content scheduled for imminent release"
-            data={upcomingReleases}
-            showStage={true}
+            data={scheduledReleases}
+            showItemCount={true}
+            showUpdatedAt={true}
+            showUpdatedBy={true}
+            onReschedule={handleRescheduleRelease}
+            onCancel={handleCancelRelease}
           />
         </div>
 
@@ -299,7 +540,6 @@ const Home = () => {
           <TabsContent value="scheduled" className="space-y-4">
             <ContentTable
               title="Upcoming Scheduled Content"
-              description="Content scheduled for publication in the next 30 days."
               data={upcomingContent}
               showStage={true}
             />
@@ -307,7 +547,6 @@ const Home = () => {
           <TabsContent value="published" className="space-y-4">
             <ContentTable
               title="Recently Published Content"
-              description="Content published in the last 30 days."
               data={recentlyPublishedContent}
               showStage={false}
             />
@@ -315,7 +554,6 @@ const Home = () => {
           <TabsContent value="update" className="space-y-4">
             <ContentTable
               title="Content Needing Updates"
-              description="Content that was published more than 6 months ago and needs review."
               data={needsUpdateContent}
               showStage={false}
             />
