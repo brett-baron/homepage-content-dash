@@ -8,7 +8,7 @@ import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
 import { getContentStats, generateChartData } from '../../utils/contentful';
-import { Environment, CollectionProp, EntryProps } from 'contentful-management';
+import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 
 // Sample data for upcoming releases
 const contentData = [
@@ -191,6 +191,28 @@ const needsUpdateContent = [
   },
 ]
 
+interface ScheduledRelease {
+  id: string;
+  title: string;
+  scheduledDateTime: string;
+  status: string;
+  itemCount: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+interface UserCache {
+  [key: string]: string;  // userId -> user's full name
+}
+
+// Update the ContentTable component props to match the new structure
+interface ContentTableProps {
+  data: ScheduledRelease[];
+  showItemCount?: boolean;
+  showUpdatedAt?: boolean;
+  showUpdatedBy?: boolean;
+}
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -203,6 +225,39 @@ const Home = () => {
     previousMonthPublished: 0,
   });
   const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
+  const [scheduledReleases, setScheduledReleases] = useState<ScheduledRelease[]>([]);
+  const [userCache, setUserCache] = useState<UserCache>({});
+
+  // Function to get user's full name
+  const getUserFullName = async (userId: string): Promise<string> => {
+    // Check cache first
+    if (userCache[userId]) {
+      return userCache[userId];
+    }
+
+    try {
+      // Fetch user data using getForSpace method
+      const user = await cma.user.getForSpace({
+        spaceId: sdk.ids.space,
+        userId
+      });
+      
+      const fullName = user.firstName && user.lastName 
+        ? `${user.firstName} ${user.lastName}`
+        : user.email || userId;
+
+      // Update cache
+      setUserCache(prev => ({
+        ...prev,
+        [userId]: fullName
+      }));
+
+      return fullName;
+    } catch (error) {
+      console.error(`Error fetching user data for ${userId}:`, error);
+      return userId; // Fallback to ID if fetch fails
+    }
+  };
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -216,6 +271,77 @@ const Home = () => {
           environmentId: sdk.ids.environment
         });
         console.log('Environment:', environment.name);
+
+        // Fetch scheduled actions for releases
+        const scheduledActions = await cma.scheduledActions.getMany({
+          spaceId: sdk.ids.space,
+          query: {
+            'environment.sys.id': sdk.ids.environment,
+            'sys.status[in]': 'scheduled',
+            'entity.sys.linkType[in]': 'Release',
+            'order': 'scheduledFor.datetime',
+            'limit': 500
+          }
+        });
+        console.log('Scheduled actions:', scheduledActions);
+
+        // Extract release IDs from scheduled actions
+        const releaseIds = scheduledActions.items
+          .filter(action => action.entity.sys.linkType === 'Release')
+          .map(action => action.entity.sys.id);
+
+        // If we have release IDs, fetch the release details
+        let releasesData: ScheduledRelease[] = [];
+        if (releaseIds.length > 0) {
+          try {
+            // Fetch each release individually since there's no getMany method
+            const releasesPromises = releaseIds.map(releaseId => 
+              cma.release.get({
+                spaceId: sdk.ids.space,
+                environmentId: sdk.ids.environment,
+                releaseId
+              })
+            );
+            
+            const releases = await Promise.all(releasesPromises);
+            
+            // Get unique user IDs from releases
+            const userIds = new Set(releases.map(release => release.sys.updatedBy.sys.id));
+            
+            // Fetch user data in parallel
+            const userPromises = Array.from(userIds).map(userId => getUserFullName(userId));
+            const userNames = await Promise.all(userPromises);
+            
+            // Create a map of user IDs to names
+            const userMap = Object.fromEntries(
+              Array.from(userIds).map((id, index) => [id, userNames[index]])
+            );
+            
+            // Combine release data with scheduled action data and user names
+            releasesData = releases.map(release => {
+              const scheduledAction = scheduledActions.items.find(
+                action => action.entity.sys.id === release.sys.id
+              );
+              return {
+                id: release.sys.id,
+                title: release.title,
+                scheduledDateTime: scheduledAction?.scheduledFor.datetime || new Date().toISOString(),
+                status: 'Scheduled',
+                itemCount: release.entities.items.length,
+                updatedAt: release.sys.updatedAt,
+                updatedBy: userMap[release.sys.updatedBy.sys.id] || release.sys.updatedBy.sys.id
+              };
+            });
+
+            // Sort by scheduled date
+            releasesData.sort((a, b) => new Date(a.scheduledDateTime).getTime() - new Date(b.scheduledDateTime).getTime());
+          } catch (error) {
+            console.error('Error fetching releases:', error);
+          }
+        }
+        
+        setScheduledReleases(releasesData);
+        console.log('Releases data:', releasesData);
 
         // Fetch all entries with pagination
         let allEntries: EntryProps[] = [];
@@ -269,15 +395,6 @@ const Home = () => {
         console.log('Total entries:', entries.items.length);
         console.log('Sample entry:', entries.items[0]);
         
-        // Get scheduled actions through the CMA client
-        const scheduledActions = await cma.scheduledActions.getMany({
-          spaceId: sdk.ids.space,
-          query: {
-            'environment.sys.id': sdk.ids.environment
-          }
-        });
-        console.log('Scheduled actions:', scheduledActions);
-        
         const contentStats = await getContentStats(entries, scheduledActions.items);
         console.log('Calculated stats:', contentStats);
         setStats(contentStats);
@@ -293,6 +410,18 @@ const Home = () => {
 
     fetchContentStats();
   }, [cma, sdk.ids.space, sdk.ids.environment]);
+
+  const formatDateTime = (dateTimeStr: string) => {
+    const date = new Date(dateTimeStr);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+  };
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -349,16 +478,18 @@ const Home = () => {
           </Card>
         </div>
         <ContentChart
-            data={chartData.length > 0 ? chartData : contentData}
-            title="Content Publication Trends"
-            description="Monthly content publication metrics from your Contentful space"
-          />
+          data={chartData.length > 0 ? chartData : contentData}
+          title="Content Publication Trends"
+          description="Monthly content publication metrics from your Contentful space"
+        />
         {/* Upcoming Releases Section */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Upcoming Releases</h2>
           <ContentTable
-            data={upcomingReleases}
-            showStage={true}
+            data={scheduledReleases}
+            showItemCount={true}
+            showUpdatedAt={true}
+            showUpdatedBy={true}
           />
         </div>
 

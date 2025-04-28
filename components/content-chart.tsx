@@ -42,7 +42,7 @@ export default function ContentChart({
             <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
             <YAxis tick={{ fontSize: 12 }} tickCount={5} domain={[0, "dataMax + 5"]} />
             <Tooltip
-              formatter={(value) => [`${value} pieces`, "Published Content"]}
+              formatter={(value) => [`${value} entries`, "Published Content"]}
               labelFormatter={formatDate}
               contentStyle={{
                 borderRadius: "0.5rem",
