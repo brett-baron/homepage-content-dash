@@ -26,22 +26,24 @@ import { useState } from "react"
 
 interface ContentItem {
   id: string
-  title: string
+  title: string | React.ReactNode
   author?: string
   status: string
-  workflow?: string
+  workflow?: string | React.ReactNode
   stage?: string
   date?: string
+  isShowMoreRow?: boolean
 }
 
 interface ScheduledRelease {
   id: string
-  title: string
+  title: string | React.ReactNode
   scheduledDateTime: string
   status: string
   itemCount: number
   updatedAt: string
   updatedBy: string
+  isShowMoreRow?: boolean
 }
 
 interface ContentTableProps {
@@ -251,7 +253,7 @@ export function ContentTable({
                 <>
                   <Table.Cell>Author</Table.Cell>
                   {showStage && <Table.Cell>Stage</Table.Cell>}
-                  <Table.Cell>Workflow</Table.Cell>
+                  <Table.Cell>Content Type</Table.Cell>
                   <Table.Cell>Date</Table.Cell>
                 </>
               )}
@@ -260,85 +262,96 @@ export function ContentTable({
           </Table.Head>
           <Table.Body>
             {data.map((item) => (
-              <Table.Row key={item.id}>
-                <Table.Cell>
-                  <Link href="#" className="hover:underline">
-                    {item.title}
-                  </Link>
+              <Table.Row 
+                key={item.id}
+                className={item.isShowMoreRow ? 'hover:bg-transparent border-0' : undefined}
+              >
+                <Table.Cell colSpan={item.isShowMoreRow ? (isScheduledReleaseData ? 6 : 5) : undefined}>
+                  {item.isShowMoreRow ? (
+                    item.title
+                  ) : (
+                    <Link href="#" className="hover:underline">
+                      {item.title}
+                    </Link>
+                  )}
                 </Table.Cell>
-                {isScheduledReleaseData ? (
-                  <>
-                    <Table.Cell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</Table.Cell>
-                    <Table.Cell>
-                      <Badge variant="primary">{item.status}</Badge>
-                    </Table.Cell>
-                    {showItemCount && (
-                      <Table.Cell>{(item as ScheduledRelease).itemCount} items</Table.Cell>
-                    )}
-                    {showUpdatedAt && (
-                      <Table.Cell>{formatDateTime((item as ScheduledRelease).updatedAt)}</Table.Cell>
-                    )}
-                    {showUpdatedBy && (
-                      <Table.Cell>{(item as ScheduledRelease).updatedBy}</Table.Cell>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <Table.Cell>{(item as ContentItem).author}</Table.Cell>
-                    {showStage && (
+                {!item.isShowMoreRow && (
+                  isScheduledReleaseData ? (
+                    <>
+                      <Table.Cell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</Table.Cell>
                       <Table.Cell>
-                        <Badge
-                          variant={
-                            (item as ContentItem).stage === "Published"
-                              ? "positive"
-                              : (item as ContentItem).stage === "Needs Update"
-                                ? "negative"
-                                : (item as ContentItem).stage === "Ready to Publish" ||
-                                    (item as ContentItem).stage === "Scheduled" ||
-                                    (item as ContentItem).stage === "Ready to Launch"
-                                  ? "primary"
-                                  : "secondary"
-                          }
-                        >
-                          {(item as ContentItem).stage}
-                        </Badge>
+                        <Badge variant="primary">{item.status}</Badge>
                       </Table.Cell>
-                    )}
-                    <Table.Cell>{(item as ContentItem).workflow}</Table.Cell>
-                    <Table.Cell>{formatDate((item as ContentItem).date)}</Table.Cell>
-                  </>
+                      {showItemCount && (
+                        <Table.Cell>{(item as ScheduledRelease).itemCount} items</Table.Cell>
+                      )}
+                      {showUpdatedAt && (
+                        <Table.Cell>{formatDateTime((item as ScheduledRelease).updatedAt)}</Table.Cell>
+                      )}
+                      {showUpdatedBy && (
+                        <Table.Cell>{(item as ScheduledRelease).updatedBy}</Table.Cell>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Table.Cell>{(item as ContentItem).author}</Table.Cell>
+                      {showStage && (
+                        <Table.Cell>
+                          <Badge
+                            variant={
+                              (item as ContentItem).stage === "Published"
+                                ? "positive"
+                                : (item as ContentItem).stage === "Needs Update"
+                                  ? "negative"
+                                  : (item as ContentItem).stage === "Ready to Publish" ||
+                                      (item as ContentItem).stage === "Scheduled" ||
+                                      (item as ContentItem).stage === "Ready to Launch"
+                                    ? "primary"
+                                    : "secondary"
+                            }
+                          >
+                            {(item as ContentItem).stage}
+                          </Badge>
+                        </Table.Cell>
+                      )}
+                      <Table.Cell>{(item as ContentItem).workflow}</Table.Cell>
+                      <Table.Cell>{formatDate((item as ContentItem).date)}</Table.Cell>
+                    </>
+                  )
                 )}
-                <Table.Cell>
-                  <Menu>
-                    <Menu.Trigger>
-                      <IconButton
-                        variant="transparent"
-                        icon={<MoreHorizontalIcon />}
-                        aria-label="Actions"
-                        isDisabled={isLoading}
-                      />
-                    </Menu.Trigger>
-                    {isScheduledReleaseData ? (
-                      <Menu.List>
-                        <Menu.Item onClick={() => handleViewRelease(item as ScheduledRelease)}>
-                          View
-                        </Menu.Item>
-                        <Menu.Item onClick={() => handleRescheduleRelease(item as ScheduledRelease)}>
-                          Reschedule
-                        </Menu.Item>
-                        <Menu.Item 
-                          onClick={() => handleCancelRelease(item as ScheduledRelease)}
-                        >
-                          Cancel Release
-                        </Menu.Item>
-                      </Menu.List>
-                    ) : (
-                      <Menu.List>
-                        <Menu.Item>Edit</Menu.Item>
-                      </Menu.List>
-                    )}
-                  </Menu>
-                </Table.Cell>
+                {!item.isShowMoreRow && (
+                  <Table.Cell>
+                    <Menu>
+                      <Menu.Trigger>
+                        <IconButton
+                          variant="transparent"
+                          icon={<MoreHorizontalIcon />}
+                          aria-label="Actions"
+                          isDisabled={isLoading}
+                        />
+                      </Menu.Trigger>
+                      {isScheduledReleaseData ? (
+                        <Menu.List>
+                          <Menu.Item onClick={() => handleViewRelease(item as ScheduledRelease)}>
+                            View
+                          </Menu.Item>
+                          <Menu.Item onClick={() => handleRescheduleRelease(item as ScheduledRelease)}>
+                            Reschedule
+                          </Menu.Item>
+                          <Menu.Item 
+                            onClick={() => handleCancelRelease(item as ScheduledRelease)}
+                          >
+                            Cancel Release
+                          </Menu.Item>
+                        </Menu.List>
+                      ) : (
+                        <Menu.List>
+                          <Menu.Item>Edit</Menu.Item>
+                        </Menu.List>
+                      )}
+                    </Menu>
+                  </Table.Cell>
+                )}
               </Table.Row>
             ))}
           </Table.Body>

@@ -3,12 +3,12 @@ import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 import { CalendarDays, Clock, Edit, FileText } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
 import { getContentStats, generateChartData } from '../../utils/contentful';
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
+import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 
 // Sample data for upcoming releases
 const contentData = [
@@ -227,6 +227,11 @@ const Home = () => {
   const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
   const [scheduledReleases, setScheduledReleases] = useState<ScheduledRelease[]>([]);
   const [userCache, setUserCache] = useState<UserCache>({});
+  
+  // New state for content entries
+  const [scheduledContent, setScheduledContent] = useState<EntryProps[]>([]);
+  const [recentlyPublishedContent, setRecentlyPublishedContent] = useState<EntryProps[]>([]);
+  const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
 
   // Function to get user's full name
   const getUserFullName = async (userId: string): Promise<string> => {
@@ -420,6 +425,34 @@ const Home = () => {
         const chartDataFromEntries = generateChartData(entries);
         console.log('Chart data:', chartDataFromEntries);
         setChartData(chartDataFromEntries);
+
+        // After allEntries is populated, categorize the entries
+        const now = new Date();
+        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+
+        // Filter entries into categories
+        const scheduled = allEntries.filter(entry => {
+          // Check if the entry has a scheduled action in the scheduledActions array
+          const matchingScheduledAction = scheduledActions.items.find(
+            action => action.entity.sys.id === entry.sys.id
+          );
+          return matchingScheduledAction && new Date(matchingScheduledAction.scheduledFor.datetime) > now;
+        });
+
+        const recentlyPublished = allEntries.filter(entry => {
+          const publishDate = entry.sys.publishedAt;
+          return publishDate && new Date(publishDate) > sevenDaysAgo;
+        });
+
+        const needsUpdate = allEntries.filter(entry => {
+          const updateDate = entry.sys.updatedAt;
+          return updateDate && new Date(updateDate) < sixMonthsAgo;
+        });
+
+        setScheduledContent(scheduled);
+        setRecentlyPublishedContent(recentlyPublished);
+        setNeedsUpdateContent(needsUpdate);
       } catch (error) {
         console.error('Error fetching content stats:', error);
       }
@@ -531,34 +564,13 @@ const Home = () => {
           />
         </div>
 
-        <Tabs defaultValue="scheduled" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="scheduled">Scheduled Content</TabsTrigger>
-            <TabsTrigger value="published">Recently Published</TabsTrigger>
-            <TabsTrigger value="update">Needs Update</TabsTrigger>
-          </TabsList>
-          <TabsContent value="scheduled" className="space-y-4">
-            <ContentTable
-              title="Upcoming Scheduled Content"
-              data={upcomingContent}
-              showStage={true}
-            />
-          </TabsContent>
-          <TabsContent value="published" className="space-y-4">
-            <ContentTable
-              title="Recently Published Content"
-              data={recentlyPublishedContent}
-              showStage={false}
-            />
-          </TabsContent>
-          <TabsContent value="update" className="space-y-4">
-            <ContentTable
-              title="Content Needing Updates"
-              data={needsUpdateContent}
-              showStage={false}
-            />
-          </TabsContent>
-        </Tabs>
+        <ContentEntryTabs
+          scheduledContent={scheduledContent}
+          recentlyPublishedContent={recentlyPublishedContent}
+          needsUpdateContent={needsUpdateContent}
+          userCache={userCache}
+          onResolveUser={getUserFullName}
+        />
 
         <Card>
           <CardHeader>
