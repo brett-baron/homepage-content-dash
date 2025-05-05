@@ -1,4 +1,14 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { useState, useEffect } from "react"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Sample data - replace with your actual data
 
@@ -25,22 +35,72 @@ interface ContentChartProps {
   description?: string
 }
 
+type TimeRange = 'all' | 'year' | '6months';
+
 export default function ContentChart({
-  data,
+  data = [],
   title,
   description,
 }: ContentChartProps) {
+  const [timeRange, setTimeRange] = useState<TimeRange>('year');
+  const [filteredData, setFilteredData] = useState(data);
+
+  useEffect(() => {
+    if (!data || data.length === 0) return;
+
+    const currentDate = new Date();
+    const filterData = () => {
+      switch (timeRange) {
+        case 'all':
+          return [...data];
+        case 'year':
+          const oneYearAgo = new Date(
+            currentDate.getFullYear() - 1,
+            currentDate.getMonth(),
+            currentDate.getDate()
+          );
+          return data.filter(item => new Date(item.date) >= oneYearAgo);
+        case '6months':
+          const sixMonthsAgo = new Date(
+            currentDate.getFullYear(),
+            currentDate.getMonth() - 6,
+            currentDate.getDate()
+          );
+          return data.filter(item => new Date(item.date) >= sixMonthsAgo);
+        default:
+          return [...data];
+      }
+    };
+
+    setFilteredData(filterData());
+  }, [data, timeRange]);
+
   return (
     <div className="w-full rounded-xl bg-white p-6 shadow-sm">
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-        <p className="text-sm text-gray-500">{description}</p>
+      <div className="mb-6 flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+          <p className="text-sm text-gray-500">{description}</p>
+        </div>
+        <Select value={timeRange} onValueChange={(value) => setTimeRange(value as TimeRange)}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Select time range" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Time Range</SelectLabel>
+              <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="year">Past Year</SelectItem>
+              <SelectItem value="6months">Last 6 Months</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="h-[400px]" role="img" aria-label="Line chart showing content publication trends over time">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
-            data={data}
+            data={filteredData}
             margin={{
               top: 5,
               right: 30,
