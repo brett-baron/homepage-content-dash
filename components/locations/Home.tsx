@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
-import { getContentStats, generateChartData } from '../../utils/contentful';
+import { getContentStats, generateChartData, fetchContentChartData } from '../../utils/contentful';
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 
@@ -264,6 +264,20 @@ const Home = () => {
     }
   };
 
+  // Separate effect for chart data
+  useEffect(() => {
+    const fetchChartData = async () => {
+      try {
+        const data = await fetchContentChartData(cma, sdk.ids.space, sdk.ids.environment);
+        setChartData(data);
+      } catch (error) {
+        console.error('Error fetching chart data:', error);
+      }
+    };
+
+    fetchChartData();
+  }, [cma, sdk.ids.space, sdk.ids.environment]);
+
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
@@ -420,11 +434,6 @@ const Home = () => {
         const contentStats = await getContentStats(entries, scheduledActions.items);
         console.log('Calculated stats:', contentStats);
         setStats(contentStats);
-        
-        // Generate chart data from entries
-        const chartDataFromEntries = generateChartData(entries);
-        console.log('Chart data:', chartDataFromEntries);
-        setChartData(chartDataFromEntries);
 
         // After allEntries is populated, categorize the entries
         const now = new Date();
@@ -548,8 +557,9 @@ const Home = () => {
           </Card>
         </div>
         <ContentChart
-          data={chartData.length > 0 ? chartData : contentData}
+          data={chartData}
           title="Content Publication Trends"
+          description="Monthly content publication activity"
         />
         {/* Upcoming Releases Section */}
         <div className="flex flex-col gap-2 md:gap-4">

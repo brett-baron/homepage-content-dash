@@ -210,4 +210,57 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
   }
   
   return chartData;
-}; 
+};
+
+export async function fetchContentChartData(cma: any, spaceId: string, environmentId: string) {
+  try {
+    // Get entries with only necessary fields
+    const entries = await cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        limit: 1000,
+        select: ['sys.publishedAt'], // Only fetch the publishedAt field
+        'sys.publishedAt[exists]': true, // Only get published entries
+        order: '-sys.publishedAt' // Order by publish date descending
+      }
+    });
+
+    // Create a map to store monthly counts
+    const monthlyData = new Map();
+
+    // Process entries
+    entries.items.forEach((entry: any) => {
+      const publishDate = new Date(entry.sys.publishedAt);
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      monthlyData.set(monthKey, (monthlyData.get(monthKey) || 0) + 1);
+    });
+
+    // Convert map to array and sort by date
+    const chartData = Array.from(monthlyData.entries())
+      .map(([date, count]) => ({
+        date,
+        count
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Ensure we have at least the last 12 months of data
+    const today = new Date();
+    const result = [];
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      const existingData = chartData.find(item => item.date === monthKey);
+      result.push({
+        date: monthKey,
+        count: existingData ? existingData.count : 0
+      });
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error fetching chart data:', error);
+    return [];
+  }
+} 
