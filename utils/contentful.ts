@@ -154,12 +154,33 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
     return entry.sys.publishedAt;
   });
 
+  console.log(`Found ${publishedEntries.length} published entries for chart data`);
+  
+  // Log the first few publish dates to verify the data
+  const sampleEntries = publishedEntries.slice(0, 5);
+  console.log('Sample publish dates (first 5):');
+  sampleEntries.forEach((entry, index) => {
+    console.log(`  ${index + 1}. Raw: ${entry.sys.publishedAt}`);
+    const date = new Date(entry.sys.publishedAt!);
+    console.log(`     Parsed: ${date.toISOString()}`);
+    console.log(`     Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}`);
+  });
+
   // Group entries by month
   const entriesByMonth: Record<string, number> = {};
   
+  // Define the oldest date
+  let oldestPublishDate: string | null = null;
+
   publishedEntries.forEach((entry: ContentfulEntry) => {
     if (entry.sys.publishedAt) {
       const publishDate = new Date(entry.sys.publishedAt);
+      
+      // Track the oldest date as a string for simple comparison
+      if (!oldestPublishDate || entry.sys.publishedAt < oldestPublishDate) {
+        oldestPublishDate = entry.sys.publishedAt;
+      }
+      
       // Format as YYYY-MM-01 to group by month
       const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
       
@@ -167,100 +188,84 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
     }
   });
 
-  // Convert to array format for chart
-  const chartData = Object.entries(entriesByMonth)
-    .map(([date, count]) => ({ date, count }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // Log month groupings
+  console.log('Entries grouped by month:');
+  Object.entries(entriesByMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([month, count]) => {
+      console.log(`  ${month}: ${count} entries`);
+    });
 
-  // If we have data, ensure we have at least 12 months of data
-  if (chartData.length > 0) {
-    const now = new Date();
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-    
-    // Use the earliest date between 12 months ago and the first entry date
-    const firstDate = new Date(Math.min(
-      twelveMonthsAgo.getTime(),
-      new Date(chartData[0].date).getTime()
-    ));
-    
-    // Use the latest date between now and the last entry date
-    const lastDate = new Date(Math.max(
-      now.getTime(),
-      new Date(chartData[chartData.length - 1].date).getTime()
-    ));
-    
-    // Create a complete array of months between first and last date
-    const completeData: Array<{ date: string; count: number }> = [];
-    let currentDate = new Date(firstDate);
-    
-    while (currentDate <= lastDate) {
-      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
-      const existingData = chartData.find(item => item.date === monthKey);
-      
-      completeData.push({
-        date: monthKey,
-        count: existingData ? existingData.count : 0
-      });
-      
-      // Move to next month
-      currentDate.setMonth(currentDate.getMonth() + 1);
-    }
-    
-    return completeData;
+  // Make sure we have a date range to work with
+  const now = new Date();
+  // June 11, 2024 is known to be the oldest content publish date
+  const minDate = new Date(2024, 5, 1); // June 1, 2024 (zero-indexed month)
+  
+  console.log(`Minimum date for chart: ${minDate.toISOString()} (June 1, 2024)`);
+  
+  // Convert the oldest publish date to a Date object
+  let oldestDate: Date | null = null;
+  if (oldestPublishDate) {
+    oldestDate = new Date(oldestPublishDate);
+    console.log(`Oldest content publish date detected: ${oldestDate.toISOString()}`);
   }
   
-  return chartData;
-};
-
-export async function fetchContentChartData(cma: any, spaceId: string, environmentId: string) {
-  try {
-    // Get entries with only necessary fields
-    const entries = await cma.entry.getMany({
-      spaceId,
-      environmentId,
-      query: {
-        limit: 1000,
-        select: ['sys.publishedAt'], // Only fetch the publishedAt field
-        'sys.publishedAt[exists]': true, // Only get published entries
-        order: '-sys.publishedAt' // Order by publish date descending
-      }
-    });
-
-    // Create a map to store monthly counts
-    const monthlyData = new Map();
-
-    // Process entries
-    entries.items.forEach((entry: any) => {
-      const publishDate = new Date(entry.sys.publishedAt);
-      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
-      
-      monthlyData.set(monthKey, (monthlyData.get(monthKey) || 0) + 1);
-    });
-
-    // Convert map to array and sort by date
-    const chartData = Array.from(monthlyData.entries())
-      .map(([date, count]) => ({
-        date,
-        count
-      }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    // Ensure we have at least the last 12 months of data
-    const today = new Date();
-    const result = [];
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-      const existingData = chartData.find(item => item.date === monthKey);
-      result.push({
-        date: monthKey,
-        count: existingData ? existingData.count : 0
-      });
-    }
-
-    return result;
-  } catch (error) {
-    console.error('Error fetching chart data:', error);
-    return [];
+  // Find the starting date for our chart
+  let startDate: Date;
+  if (oldestDate && oldestDate < minDate) {
+    startDate = new Date(oldestDate);
+    console.log(`Using oldest content date as start date: ${startDate.toISOString()}`);
+  } else {
+    startDate = new Date(minDate);
+    console.log(`Using minimum date (June 2024) as start date: ${startDate.toISOString()}`);
   }
-} 
+  
+  const endDate = new Date(now);
+  console.log(`End date for chart (current date): ${endDate.toISOString()}`);
+  
+  // Set both dates to first day of their respective months
+  startDate.setDate(1);
+  endDate.setDate(1);
+  
+  console.log(`Adjusted start date (first of month): ${startDate.toISOString()}`);
+  console.log(`Adjusted end date (first of month): ${endDate.toISOString()}`);
+  
+  // Create a complete array of months from start to end date
+  const completeData: Array<{ date: string; count: number }> = [];
+  let currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
+    const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+    
+    completeData.push({
+      date: monthKey,
+      count: entriesByMonth[monthKey] || 0
+    });
+    
+    // Move to next month
+    currentDate.setMonth(currentDate.getMonth() + 1);
+  }
+  
+  // Log out the chart data for debugging
+  console.log('Chart data details:');
+  console.log('Oldest publish date string:', oldestPublishDate);
+  console.log('Oldest publish date:', oldestDate ? oldestDate.toISOString() : 'none');
+  console.log('Range start date:', startDate.toISOString());
+  console.log('Range end date:', endDate.toISOString());
+  console.log('Generated data points:', completeData.length);
+  
+  // For detailed logging of chart data
+  console.log('Final chart data points:');
+  completeData.forEach(point => {
+    // Manually parse the date string to ensure correct month display
+    const [year, month] = point.date.split('-');
+    // Subtract 1 from month when creating Date because JS months are 0-indexed
+    const pointDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    
+    console.log(`  ${point.date} (${pointDate.toLocaleString('en-US', { month: 'short', year: 'numeric' })}): ${point.count} entries`);
+    // Log raw month values to debug
+    console.log(`    Raw month value: ${month}, JS Date month: ${pointDate.getMonth() + 1}`);
+  });
+  
+  return completeData;
+}; 

@@ -29,8 +29,7 @@ const getEntryTitle = (entry: EntryProps): string => {
   const titleFields = ['title', 'name', 'heading', 'internalName'];
   const fields = entry.fields || {};
   
-  // Debug log to see the structure
-  console.log('Entry fields:', JSON.stringify(fields, null, 2));
+
   
   for (const fieldName of titleFields) {
     const field = fields[fieldName];
