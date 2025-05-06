@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, GitBranchPlus } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
@@ -9,6 +9,7 @@ import { WorkflowStageChart } from "@/components/workflow-stage-chart"
 import { getContentStats, generateChartData, generateUpdatedChartData } from '../../utils/contentful';
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
+import { AppInstallationParameters } from './ConfigScreen';
 
 // Sample data for upcoming releases
 const contentData = [
@@ -213,6 +214,10 @@ interface ContentTableProps {
   showUpdatedBy?: boolean;
 }
 
+interface AppConfig {
+  excludedContentTypes: string[];
+}
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -233,6 +238,8 @@ const Home = () => {
   const [scheduledContent, setScheduledContent] = useState<EntryProps[]>([]);
   const [recentlyPublishedContent, setRecentlyPublishedContent] = useState<EntryProps[]>([]);
   const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
+  const [orphanedContent, setOrphanedContent] = useState<EntryProps[]>([]);
+  const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
 
   // Function to get user's full name
   const getUserFullName = async (userId: string): Promise<string> => {
@@ -265,6 +272,73 @@ const Home = () => {
     }
   };
 
+  // Separate useEffect to fetch app installation parameters
+  useEffect(() => {
+    // Function to get app installation parameters
+    const fetchAppInstallationParameters = async () => {
+      try {
+        // For simplicity, we'll get the configuration directly from localStorage
+        // In a real app, you'd implement proper API calls to your backend service
+        const storedConfig = localStorage.getItem('contentDashboardConfig');
+        
+        if (storedConfig) {
+          try {
+            const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
+            if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
+              console.log('Loaded config from localStorage:', parsedConfig.excludedContentTypes);
+              setExcludedContentTypes(parsedConfig.excludedContentTypes);
+              return;
+            }
+          } catch (e) {
+            console.error('Error parsing stored config:', e);
+          }
+        }
+        
+        // If we couldn't get a configuration from localStorage, use the default values
+        // BUT we'll check if they exist first by fetching content types
+        try {
+          const contentTypesResponse = await cma.contentType.getMany({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment
+          });
+          
+          const availableContentTypeIds = contentTypesResponse.items.map(ct => ct.sys.id);
+          console.log('Available content types for defaults:', availableContentTypeIds);
+          
+          // Filter the default excluded types to only include ones that exist
+          const defaultExcludedBase = ['page', 'settings', 'navigation', 'siteConfig'];
+          const defaultExcluded = defaultExcludedBase.filter(id => 
+            availableContentTypeIds.includes(id)
+          );
+          
+          if (defaultExcluded.length !== defaultExcludedBase.length) {
+            console.warn('Some default excluded content types do not exist in this space:', 
+              defaultExcludedBase.filter(id => !availableContentTypeIds.includes(id))
+            );
+          }
+          
+          setExcludedContentTypes(defaultExcluded);
+          console.log('Using filtered default excluded content types:', defaultExcluded);
+          
+          // For demo purposes, save these default values to localStorage
+          localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
+            excludedContentTypes: defaultExcluded 
+          }));
+        } catch (error) {
+          console.error('Error fetching content types for defaults:', error);
+          // Fallback to empty array if we can't fetch content types
+          setExcludedContentTypes([]);
+        }
+      } catch (error) {
+        console.error('Error setting up excluded content types:', error);
+        // Use empty array as fallback
+        setExcludedContentTypes([]);
+      }
+    };
+
+    fetchAppInstallationParameters();
+  }, [cma, sdk.ids.space, sdk.ids.environment]);
+
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
@@ -277,6 +351,7 @@ const Home = () => {
           environmentId: sdk.ids.environment
         });
         console.log('Environment:', environment.name);
+        console.log('Using excluded content types:', excludedContentTypes);
 
         // Fetch scheduled actions for releases
         const scheduledActions = await cma.scheduledActions.getMany({
@@ -456,16 +531,117 @@ const Home = () => {
           return updateDate && new Date(updateDate) < sixMonthsAgo;
         });
 
+        // Find orphaned entries (entries not referenced by any other entry)
+        const entryMap = new Map<string, EntryProps>();
+        const referencedEntries = new Set<string>();
+
+        // First, build a map of all entries and find references
+        allEntries.forEach(entry => {
+          entryMap.set(entry.sys.id, entry);
+          
+          // Check all fields for references
+          if (entry.fields) {
+            Object.values(entry.fields).forEach(field => {
+              if (field) {
+                // Handle localized fields
+                Object.values(field).forEach(localizedValue => {
+                  // Check for link arrays (multiple references)
+                  if (Array.isArray(localizedValue)) {
+                    localizedValue.forEach(item => {
+                      if (item && item.sys && item.sys.type === 'Link' && 
+                          item.sys.linkType === 'Entry') {
+                        referencedEntries.add(item.sys.id);
+                      }
+                    });
+                  } 
+                  // Check for single reference
+                  else if (localizedValue && typeof localizedValue === 'object' && 
+                          (localizedValue as any).sys && 
+                          (localizedValue as any).sys.type === 'Link' && 
+                          (localizedValue as any).sys.linkType === 'Entry') {
+                    referencedEntries.add((localizedValue as any).sys.id);
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        // Get the content types for better filtering
+        const contentTypeMap = new Map<string, string>();
+        try {
+          const contentTypes = await cma.contentType.getMany({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment
+          });
+          
+          contentTypes.items.forEach(contentType => {
+            contentTypeMap.set(contentType.sys.id, contentType.name);
+          });
+          
+          console.log('Loaded content types:', contentTypeMap.size);
+        } catch (error) {
+          console.error('Error fetching content types:', error);
+        }
+
+        // Find entries that are not referenced
+        const orphanedEntries = allEntries.filter(entry => 
+          // Only include published entries
+          entry.sys.publishedAt && 
+          // Exclude entries that are referenced by other entries
+          !referencedEntries.has(entry.sys.id) &&
+          // Exclude content types in our exclusion list
+          !(entry.sys.contentType && 
+            excludedContentTypes.includes(entry.sys.contentType.sys.id))
+        ).sort((a, b) => {
+          // Sort by content type first, then by last updated date (newest first)
+          const contentTypeA = a.sys.contentType?.sys.id || '';
+          const contentTypeB = b.sys.contentType?.sys.id || '';
+          
+          if (contentTypeA !== contentTypeB) {
+            return contentTypeA.localeCompare(contentTypeB);
+          }
+          
+          const dateA = new Date(a.sys.updatedAt || a.sys.createdAt).getTime();
+          const dateB = new Date(b.sys.updatedAt || b.sys.createdAt).getTime();
+          return dateB - dateA; // newest first
+        });
+
+        // Count how many entries were excluded because of content type
+        const excludedByContentType = allEntries.reduce((acc, entry) => {
+          if (entry.sys.publishedAt && 
+              !referencedEntries.has(entry.sys.id) && 
+              entry.sys.contentType && 
+              excludedContentTypes.includes(entry.sys.contentType.sys.id)) {
+            const contentTypeId = entry.sys.contentType.sys.id;
+            acc[contentTypeId] = (acc[contentTypeId] || 0) + 1;
+          }
+          return acc;
+        }, {} as Record<string, number>);
+
+        // Log some stats about the orphaned content
+        const orphanedByContentType = orphanedEntries.reduce((acc, entry) => {
+          const contentTypeId = entry.sys.contentType?.sys.id || 'unknown';
+          acc[contentTypeId] = (acc[contentTypeId] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        console.log('Orphaned entries by content type:', orphanedByContentType);
+        console.log('Excluded entries by content type:', excludedByContentType);
+        console.log(`Found ${orphanedEntries.length} orphaned entries out of ${allEntries.length} total entries`);
+        console.log(`Excluded ${Object.values(excludedByContentType).reduce((a, b) => a + b, 0)} entries based on excluded content types:`, excludedContentTypes);
+        
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublished);
         setNeedsUpdateContent(needsUpdate);
+        setOrphanedContent(orphanedEntries);
       } catch (error) {
         console.error('Error fetching content stats:', error);
       }
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -499,21 +675,35 @@ const Home = () => {
     setScheduledReleases(prev => prev.filter(release => release.id !== releaseId));
   };
 
+  // Function to open an entry in the Contentful web app
+  const handleOpenEntry = (entryId: string) => {
+    if (!sdk || !sdk.ids) return;
+    
+    // Construct the URL to the entry in the Contentful web app
+    const baseUrl = 'https://app.contentful.com';
+    const url = `${baseUrl}/spaces/${sdk.ids.space}/environments/${sdk.ids.environment}/entries/${entryId}`;
+    
+    // Open the entry in a new tab
+    window.open(url, '_blank');
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <h1 className="text-2xl font-bold">Content Dashboard</h1>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Published Content</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+        <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 w-full">
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <FileText className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Total Published</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalPublished}</div>
-              <p className="text-xs text-muted-foreground">
-                {stats.previousMonthPublished === 0
-                ? 'No content published last month'
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.totalPublished}</div>
+              <p className="text-sm text-muted-foreground mt-1">
+                {stats.previousMonthPublished === 0 && stats.percentChange === 0
+                ? 'No content published recently'
                 : (
                   <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
                     {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month
@@ -522,34 +712,52 @@ const Home = () => {
               </p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Scheduled</CardTitle>
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <CalendarDays className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Scheduled</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.scheduledCount}</div>
-              <p className="text-xs text-muted-foreground">For the next 30 days</p>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.scheduledCount}</div>
+              <p className="text-sm text-muted-foreground mt-1">For the next 30 days</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recently Published</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <Clock className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Recently Published</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.recentlyPublishedCount}</div>
-              <p className="text-xs text-muted-foreground">In the last 7 days</p>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.recentlyPublishedCount}</div>
+              <p className="text-sm text-muted-foreground mt-1">In the last 7 days</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Needs Update</CardTitle>
-              <Edit className="h-4 w-4 text-muted-foreground" />
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <Edit className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Needs Update</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.needsUpdateCount}</div>
-              <p className="text-xs text-muted-foreground">Content older than 6 months</p>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
+              <p className="text-sm text-muted-foreground mt-1">Content older than 6 months</p>
+            </CardContent>
+          </Card>
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <GitBranchPlus className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Orphaned Content</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{orphanedContent.length}</div>
+              <p className="text-sm text-muted-foreground mt-1">Entries with no references</p>
             </CardContent>
           </Card>
         </div>
@@ -575,8 +783,10 @@ const Home = () => {
           scheduledContent={scheduledContent}
           recentlyPublishedContent={recentlyPublishedContent}
           needsUpdateContent={needsUpdateContent}
+          orphanedContent={orphanedContent}
           userCache={userCache}
           onResolveUser={getUserFullName}
+          onOpenEntry={handleOpenEntry}
         />
 
         <Card>

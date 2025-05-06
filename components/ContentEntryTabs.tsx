@@ -2,15 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentTable } from "@/components/content-table"
 import { EntryProps } from 'contentful-management';
-import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 interface ContentEntryTabsProps {
   scheduledContent: any[];
   recentlyPublishedContent: any[];
   needsUpdateContent: any[];
+  orphanedContent: any[];
   userCache: Record<string, string>;
   onResolveUser: (userId: string) => Promise<string>;
+  onOpenEntry?: (entryId: string) => void;
 }
 
 interface TransformedEntry {
@@ -22,6 +23,7 @@ interface TransformedEntry {
   stage: string;
   date: string;
   isShowMoreRow?: boolean;
+  contentType: string;
 }
 
 const getEntryTitle = (entry: EntryProps): string => {
@@ -76,27 +78,33 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   scheduledContent,
   recentlyPublishedContent,
   needsUpdateContent,
+  orphanedContent,
   userCache,
   onResolveUser,
+  onOpenEntry,
 }) => {
   const [transformedData, setTransformedData] = useState<{
     scheduled: TransformedEntry[];
     published: TransformedEntry[];
     update: TransformedEntry[];
+    orphaned: TransformedEntry[];
   }>({
     scheduled: [],
     published: [],
     update: [],
+    orphaned: [],
   });
 
   const [showMore, setShowMore] = useState<{
     scheduled: boolean;
     published: boolean;
     update: boolean;
+    orphaned: boolean;
   }>({
     scheduled: false,
     published: false,
     update: false,
+    orphaned: false,
   });
 
   useEffect(() => {
@@ -119,29 +127,32 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           workflow: entry.sys.contentType?.sys.id || 'Unknown',
           stage: entry.sys.publishedVersion ? 'Published' : 'Draft',
           date: entry.sys.publishedAt || entry.sys.createdAt,
+          contentType: entry.sys.contentType?.sys.id || 'Unknown',
         };
       }));
       return transformed;
     };
 
     const updateTransformedData = async () => {
-      const [scheduled, published, update] = await Promise.all([
+      const [scheduled, published, update, orphaned] = await Promise.all([
         transformEntries(scheduledContent),
         transformEntries(recentlyPublishedContent),
         transformEntries(needsUpdateContent),
+        transformEntries(orphanedContent),
       ]);
 
       setTransformedData({
         scheduled,
         published,
         update,
+        orphaned,
       });
     };
 
     updateTransformedData();
-  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, userCache, onResolveUser]);
+  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, orphanedContent, userCache, onResolveUser]);
 
-  const getDisplayData = (data: TransformedEntry[], type: 'scheduled' | 'published' | 'update') => {
+  const getDisplayData = (data: TransformedEntry[], type: 'scheduled' | 'published' | 'update' | 'orphaned') => {
     const limit = showMore[type] ? 20 : 5;
     const displayData = data.slice(0, limit);
     
@@ -180,12 +191,14 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
         <TabsTrigger value="scheduled">Scheduled Content</TabsTrigger>
         <TabsTrigger value="published">Recently Published</TabsTrigger>
         <TabsTrigger value="update">Needs Update</TabsTrigger>
+        <TabsTrigger value="orphaned">Orphaned Content</TabsTrigger>
       </TabsList>
       <TabsContent value="scheduled" className="space-y-4">
         <ContentTable
           title="Upcoming Scheduled Content"
           data={getDisplayData(transformedData.scheduled, 'scheduled')}
           showStage={true}
+          onEntryClick={onOpenEntry}
         />
       </TabsContent>
       <TabsContent value="published" className="space-y-4">
@@ -193,6 +206,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           title="Recently Published Content"
           data={getDisplayData(transformedData.published, 'published')}
           showStage={false}
+          onEntryClick={onOpenEntry}
         />
       </TabsContent>
       <TabsContent value="update" className="space-y-4">
@@ -200,6 +214,21 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           title="Content Needing Updates"
           data={getDisplayData(transformedData.update, 'update')}
           showStage={false}
+          onEntryClick={onOpenEntry}
+        />
+      </TabsContent>
+      <TabsContent value="orphaned" className="space-y-4">
+        <ContentTable
+          title="Content that is not referenced"
+          description={
+            "Entries that are not linked by any other content. " +
+            (localStorage.getItem('contentDashboardConfig') ? 
+              `Some content types are excluded from this view based on your configuration.` : 
+              "No content types are currently excluded from this view.")
+          }
+          data={getDisplayData(transformedData.orphaned, 'orphaned')}
+          showStage={false}
+          onEntryClick={onOpenEntry}
         />
       </TabsContent>
     </Tabs>

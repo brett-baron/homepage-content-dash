@@ -56,6 +56,7 @@ interface ContentTableProps {
   showUpdatedBy?: boolean
   onReschedule?: (releaseId: string, newDateTime: string) => Promise<void>
   onCancel?: (releaseId: string) => Promise<void>
+  onEntryClick?: (entryId: string) => void
 }
 
 const formatDateTime = (dateTimeStr: string) => {
@@ -85,7 +86,8 @@ export function ContentTable({
   showUpdatedAt = false,
   showUpdatedBy = false,
   onReschedule,
-  onCancel
+  onCancel,
+  onEntryClick
 }: ContentTableProps) {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -233,8 +235,12 @@ export function ContentTable({
       <Card>
         {(title || description) && (
           <Box padding="spacingM">
-            {title && <Subheading marginBottom="spacingXs">{title}</Subheading>}
-            {description && <Text>{description}</Text>}
+            <Flex justifyContent="space-between" alignItems="center">
+              <div>
+                {title && <Subheading marginBottom="spacingXs">{title}</Subheading>}
+                {description && <Text>{description}</Text>}
+              </div>
+            </Flex>
           </Box>
         )}
         <Table>
@@ -254,7 +260,7 @@ export function ContentTable({
                   <Table.Cell>Author</Table.Cell>
                   {showStage && <Table.Cell>Stage</Table.Cell>}
                   <Table.Cell>Content Type</Table.Cell>
-                  <Table.Cell>Date</Table.Cell>
+                  <Table.Cell>Published Date</Table.Cell>
                 </>
               )}
               <Table.Cell></Table.Cell>
@@ -270,7 +276,18 @@ export function ContentTable({
                   {item.isShowMoreRow ? (
                     item.title
                   ) : (
-                    <Link href="#" className="hover:underline">
+                    <Link 
+                      href="#" 
+                      className="hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (onEntryClick && !isScheduledReleaseData) {
+                          onEntryClick(item.id);
+                        } else if (isScheduledReleaseData) {
+                          handleViewRelease(item as ScheduledRelease);
+                        }
+                      }}
+                    >
                       {item.title}
                     </Link>
                   )}

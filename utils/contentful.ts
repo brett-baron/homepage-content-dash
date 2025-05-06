@@ -50,6 +50,18 @@ type ContentfulEntry = EntryProps & {
 
 export const getContentStats = async (entries: CollectionProp<EntryProps>, actions: any[]): Promise<ContentStats> => {
   const now = new Date();
+  console.log('Current date:', now.toISOString());
+  
+  // Calculate the start of the current and previous months for more accurate monthly comparisons
+  const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  
+  console.log('Current month start:', currentMonth.toISOString());
+  console.log('Previous month start:', previousMonth.toISOString());
+  console.log('Two months ago start:', twoMonthsAgo.toISOString());
+  
+  // For other calculations (7 days, 6 months)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
@@ -68,25 +80,51 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   // Calculate total published
   const totalPublished = publishedEntries.length;
 
-  // Calculate percent change (comparing current month to previous month)
+  // Calculate entries published in current month and previous month
   const thisMonthPublished = publishedEntries.filter((entry: ContentfulEntry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= thirtyDaysAgo;
+    return publishDate >= currentMonth;
   }).length;
 
   console.log('This month published:', thisMonthPublished);
+  
+  // Log a few sample entries from this month for debugging
+  const thisMonthEntries = publishedEntries.filter((entry: ContentfulEntry) => {
+    const publishDate = new Date(entry.sys.publishedAt!);
+    return publishDate >= currentMonth;
+  }).slice(0, 3);
+  
+  console.log('Sample entries published this month:');
+  thisMonthEntries.forEach((entry, i) => {
+    console.log(`Entry ${i+1}: Published at ${entry.sys.publishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
+  });
 
-  const previousMonthStart = new Date(thirtyDaysAgo.getTime() - 30 * 24 * 60 * 60 * 1000);
   const previousMonthPublished = publishedEntries.filter((entry: ContentfulEntry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= previousMonthStart && publishDate < thirtyDaysAgo;
+    return publishDate >= previousMonth && publishDate < currentMonth;
   }).length;
 
   console.log('Previous month published:', previousMonthPublished);
+  
+  // Log a few sample entries from previous month for debugging
+  const previousMonthEntries = publishedEntries.filter((entry: ContentfulEntry) => {
+    const publishDate = new Date(entry.sys.publishedAt!);
+    return publishDate >= previousMonth && publishDate < currentMonth;
+  }).slice(0, 3);
+  
+  console.log('Sample entries published last month:');
+  previousMonthEntries.forEach((entry, i) => {
+    console.log(`Entry ${i+1}: Published at ${entry.sys.publishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
+  });
 
-  const percentChange = previousMonthPublished === 0 
-    ? 0
-    : ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
+  // Even if previousMonthPublished is 0, if we have content published this month
+  // we should still show a percentage increase
+  let percentChange = 0;
+  if (previousMonthPublished > 0) {
+    percentChange = ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
+  } else if (thisMonthPublished > 0) {
+    percentChange = 100; // If nothing published last month but we have content this month, show 100% increase
+  }
 
   // Get scheduled count - including both individual entries and entries in releases
   console.log('Processing scheduled actions:', actions?.length);
