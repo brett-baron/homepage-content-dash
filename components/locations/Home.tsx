@@ -701,7 +701,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.totalPublished}</div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {stats.previousMonthPublished === 0 && stats.percentChange === 0
                 ? 'No content published recently'
                 : (
@@ -721,7 +721,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.scheduledCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">For the next 30 days</p>
+              <p className="text-sm text-muted-foreground mt-1">For the next 30 days</p>
             </CardContent>
           </Card>
           <Card className="w-full relative">
@@ -733,7 +733,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.recentlyPublishedCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">In the last 7 days</p>
+              <p className="text-sm text-muted-foreground mt-1">In the last 7 days</p>
             </CardContent>
           </Card>
           <Card className="w-full relative">
@@ -745,7 +745,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">Content older than 6 months</p>
+              <p className="text-sm text-muted-foreground mt-1">Content older than 6 months</p>
             </CardContent>
           </Card>
           <Card className="w-full relative">
@@ -757,7 +757,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{orphanedContent.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Entries with no references</p>
+              <p className="text-sm text-muted-foreground mt-1">Entries with no references</p>
             </CardContent>
           </Card>
         </div>
