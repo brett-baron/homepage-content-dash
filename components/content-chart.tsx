@@ -100,7 +100,7 @@ export default function ContentChart({
               <SelectGroup>
                 <SelectLabel>View</SelectLabel>
                 <SelectItem value="new">New Content</SelectItem>
-                <SelectItem value="updated">New & Updated</SelectItem>
+                <SelectItem value="updated">New or Updated</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
