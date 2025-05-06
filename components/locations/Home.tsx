@@ -9,6 +9,7 @@ import { WorkflowStageChart } from "@/components/workflow-stage-chart"
 import { getContentStats, generateChartData, generateUpdatedChartData } from '../../utils/contentful';
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
+import { AppInstallationParameters } from './ConfigScreen';
 
 // Sample data for upcoming releases
 const contentData = [
@@ -213,6 +214,10 @@ interface ContentTableProps {
   showUpdatedBy?: boolean;
 }
 
+interface AppConfig {
+  excludedContentTypes: string[];
+}
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -233,6 +238,8 @@ const Home = () => {
   const [scheduledContent, setScheduledContent] = useState<EntryProps[]>([]);
   const [recentlyPublishedContent, setRecentlyPublishedContent] = useState<EntryProps[]>([]);
   const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
+  const [orphanedContent, setOrphanedContent] = useState<EntryProps[]>([]);
+  const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
 
   // Function to get user's full name
   const getUserFullName = async (userId: string): Promise<string> => {
@@ -265,6 +272,73 @@ const Home = () => {
     }
   };
 
+  // Separate useEffect to fetch app installation parameters
+  useEffect(() => {
+    // Function to get app installation parameters
+    const fetchAppInstallationParameters = async () => {
+      try {
+        // For simplicity, we'll get the configuration directly from localStorage
+        // In a real app, you'd implement proper API calls to your backend service
+        const storedConfig = localStorage.getItem('contentDashboardConfig');
+        
+        if (storedConfig) {
+          try {
+            const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
+            if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
+              console.log('Loaded config from localStorage:', parsedConfig.excludedContentTypes);
+              setExcludedContentTypes(parsedConfig.excludedContentTypes);
+              return;
+            }
+          } catch (e) {
+            console.error('Error parsing stored config:', e);
+          }
+        }
+        
+        // If we couldn't get a configuration from localStorage, use the default values
+        // BUT we'll check if they exist first by fetching content types
+        try {
+          const contentTypesResponse = await cma.contentType.getMany({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment
+          });
+          
+          const availableContentTypeIds = contentTypesResponse.items.map(ct => ct.sys.id);
+          console.log('Available content types for defaults:', availableContentTypeIds);
+          
+          // Filter the default excluded types to only include ones that exist
+          const defaultExcludedBase = ['page', 'settings', 'navigation', 'siteConfig'];
+          const defaultExcluded = defaultExcludedBase.filter(id => 
+            availableContentTypeIds.includes(id)
+          );
+          
+          if (defaultExcluded.length !== defaultExcludedBase.length) {
+            console.warn('Some default excluded content types do not exist in this space:', 
+              defaultExcludedBase.filter(id => !availableContentTypeIds.includes(id))
+            );
+          }
+          
+          setExcludedContentTypes(defaultExcluded);
+          console.log('Using filtered default excluded content types:', defaultExcluded);
+          
+          // For demo purposes, save these default values to localStorage
+          localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
+            excludedContentTypes: defaultExcluded 
+          }));
+        } catch (error) {
+          console.error('Error fetching content types for defaults:', error);
+          // Fallback to empty array if we can't fetch content types
+          setExcludedContentTypes([]);
+        }
+      } catch (error) {
+        console.error('Error setting up excluded content types:', error);
+        // Use empty array as fallback
+        setExcludedContentTypes([]);
+      }
+    };
+
+    fetchAppInstallationParameters();
+  }, [cma, sdk.ids.space, sdk.ids.environment]);
+
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
@@ -277,6 +351,7 @@ const Home = () => {
           environmentId: sdk.ids.environment
         });
         console.log('Environment:', environment.name);
+        console.log('Using excluded content types:', excludedContentTypes);
 
         // Fetch scheduled actions for releases
         const scheduledActions = await cma.scheduledActions.getMany({
@@ -456,16 +531,117 @@ const Home = () => {
           return updateDate && new Date(updateDate) < sixMonthsAgo;
         });
 
+        // Find orphaned entries (entries not referenced by any other entry)
+        const entryMap = new Map<string, EntryProps>();
+        const referencedEntries = new Set<string>();
+
+        // First, build a map of all entries and find references
+        allEntries.forEach(entry => {
+          entryMap.set(entry.sys.id, entry);
+          
+          // Check all fields for references
+          if (entry.fields) {
+            Object.values(entry.fields).forEach(field => {
+              if (field) {
+                // Handle localized fields
+                Object.values(field).forEach(localizedValue => {
+                  // Check for link arrays (multiple references)
+                  if (Array.isArray(localizedValue)) {
+                    localizedValue.forEach(item => {
+                      if (item && item.sys && item.sys.type === 'Link' && 
+                          item.sys.linkType === 'Entry') {
+                        referencedEntries.add(item.sys.id);
+                      }
+                    });
+                  } 
+                  // Check for single reference
+                  else if (localizedValue && typeof localizedValue === 'object' && 
+                          (localizedValue as any).sys && 
+                          (localizedValue as any).sys.type === 'Link' && 
+                          (localizedValue as any).sys.linkType === 'Entry') {
+                    referencedEntries.add((localizedValue as any).sys.id);
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        // Get the content types for better filtering
+        const contentTypeMap = new Map<string, string>();
+        try {
+          const contentTypes = await cma.contentType.getMany({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment
+          });
+          
+          contentTypes.items.forEach(contentType => {
+            contentTypeMap.set(contentType.sys.id, contentType.name);
+          });
+          
+          console.log('Loaded content types:', contentTypeMap.size);
+        } catch (error) {
+          console.error('Error fetching content types:', error);
+        }
+
+        // Find entries that are not referenced
+        const orphanedEntries = allEntries.filter(entry => 
+          // Only include published entries
+          entry.sys.publishedAt && 
+          // Exclude entries that are referenced by other entries
+          !referencedEntries.has(entry.sys.id) &&
+          // Exclude content types in our exclusion list
+          !(entry.sys.contentType && 
+            excludedContentTypes.includes(entry.sys.contentType.sys.id))
+        ).sort((a, b) => {
+          // Sort by content type first, then by last updated date (newest first)
+          const contentTypeA = a.sys.contentType?.sys.id || '';
+          const contentTypeB = b.sys.contentType?.sys.id || '';
+          
+          if (contentTypeA !== contentTypeB) {
+            return contentTypeA.localeCompare(contentTypeB);
+          }
+          
+          const dateA = new Date(a.sys.updatedAt || a.sys.createdAt).getTime();
+          const dateB = new Date(b.sys.updatedAt || b.sys.createdAt).getTime();
+          return dateB - dateA; // newest first
+        });
+
+        // Count how many entries were excluded because of content type
+        const excludedByContentType = allEntries.reduce((acc, entry) => {
+          if (entry.sys.publishedAt && 
+              !referencedEntries.has(entry.sys.id) && 
+              entry.sys.contentType && 
+              excludedContentTypes.includes(entry.sys.contentType.sys.id)) {
+            const contentTypeId = entry.sys.contentType.sys.id;
+            acc[contentTypeId] = (acc[contentTypeId] || 0) + 1;
+          }
+          return acc;
+        }, {} as Record<string, number>);
+
+        // Log some stats about the orphaned content
+        const orphanedByContentType = orphanedEntries.reduce((acc, entry) => {
+          const contentTypeId = entry.sys.contentType?.sys.id || 'unknown';
+          acc[contentTypeId] = (acc[contentTypeId] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        console.log('Orphaned entries by content type:', orphanedByContentType);
+        console.log('Excluded entries by content type:', excludedByContentType);
+        console.log(`Found ${orphanedEntries.length} orphaned entries out of ${allEntries.length} total entries`);
+        console.log(`Excluded ${Object.values(excludedByContentType).reduce((a, b) => a + b, 0)} entries based on excluded content types:`, excludedContentTypes);
+        
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublished);
         setNeedsUpdateContent(needsUpdate);
+        setOrphanedContent(orphanedEntries);
       } catch (error) {
         console.error('Error fetching content stats:', error);
       }
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -497,6 +673,18 @@ const Home = () => {
   const handleCancelRelease = async (releaseId: string) => {
     // Remove the canceled release from the list
     setScheduledReleases(prev => prev.filter(release => release.id !== releaseId));
+  };
+
+  // Function to open an entry in the Contentful web app
+  const handleOpenEntry = (entryId: string) => {
+    if (!sdk || !sdk.ids) return;
+    
+    // Construct the URL to the entry in the Contentful web app
+    const baseUrl = 'https://app.contentful.com';
+    const url = `${baseUrl}/spaces/${sdk.ids.space}/environments/${sdk.ids.environment}/entries/${entryId}`;
+    
+    // Open the entry in a new tab
+    window.open(url, '_blank');
   };
 
   return (
@@ -575,8 +763,10 @@ const Home = () => {
           scheduledContent={scheduledContent}
           recentlyPublishedContent={recentlyPublishedContent}
           needsUpdateContent={needsUpdateContent}
+          orphanedContent={orphanedContent}
           userCache={userCache}
           onResolveUser={getUserFullName}
+          onOpenEntry={handleOpenEntry}
         />
 
         <Card>
