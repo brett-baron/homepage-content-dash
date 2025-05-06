@@ -1,17 +1,19 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { ConfigAppSDK } from '@contentful/app-sdk';
-import { Heading, Form, Paragraph, Flex, FormControl, Note, Spinner } from '@contentful/f36-components';
+import { Heading, Form, Paragraph, Flex, FormControl, Note, Spinner, Select } from '@contentful/f36-components';
 import { Multiselect } from '@contentful/f36-multiselect';
 import { css } from 'emotion';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 
 export interface AppInstallationParameters {
   excludedContentTypes?: string[];
+  needsUpdateMonths?: number;
 }
 
 const ConfigScreen = () => {
   const [parameters, setParameters] = useState<AppInstallationParameters>({
-    excludedContentTypes: []
+    excludedContentTypes: [],
+    needsUpdateMonths: 6
   });
   const [contentTypes, setContentTypes] = useState<Array<{ id: string; name: string }>>([]);
   const [filteredContentTypes, setFilteredContentTypes] = useState<Array<{ id: string; name: string }>>([]);
@@ -73,19 +75,26 @@ const ConfigScreen = () => {
         if (storedConfig) {
           try {
             const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
-            if (parsedConfig && parsedConfig.excludedContentTypes) {
-              console.log('Config from localStorage excludes:', parsedConfig.excludedContentTypes);
+            if (parsedConfig) {
+              console.log('Config from localStorage:', parsedConfig);
               
               // Filter out content types that don't exist
-              const validExcludedTypes = parsedConfig.excludedContentTypes.filter(id => 
-                sortedContentTypes.some(ct => ct.id === id)
-              );
-              
-              if (validExcludedTypes.length !== parsedConfig.excludedContentTypes.length) {
-                console.warn('Some excluded content types were filtered out because they do not exist:', 
-                  parsedConfig.excludedContentTypes.filter(id => !sortedContentTypes.some(ct => ct.id === id))
+              if (parsedConfig.excludedContentTypes) {
+                const validExcludedTypes = parsedConfig.excludedContentTypes.filter(id => 
+                  sortedContentTypes.some(ct => ct.id === id)
                 );
-                parsedConfig.excludedContentTypes = validExcludedTypes;
+                
+                if (validExcludedTypes.length !== parsedConfig.excludedContentTypes.length) {
+                  console.warn('Some excluded content types were filtered out because they do not exist:', 
+                    parsedConfig.excludedContentTypes.filter(id => !sortedContentTypes.some(ct => ct.id === id))
+                  );
+                  parsedConfig.excludedContentTypes = validExcludedTypes;
+                }
+              }
+              
+              // Ensure we have a valid needsUpdateMonths
+              if (!parsedConfig.needsUpdateMonths || parsedConfig.needsUpdateMonths < 1) {
+                parsedConfig.needsUpdateMonths = 6; // Default to 6 months
               }
               
               setParameters(parsedConfig);
@@ -103,10 +112,17 @@ const ConfigScreen = () => {
         const currentParameters: AppInstallationParameters | null = await sdk.app.getParameters();
 
         if (currentParameters) {
+          // Ensure default needsUpdateMonths if not set
+          if (!currentParameters.needsUpdateMonths) {
+            currentParameters.needsUpdateMonths = 6;
+          }
           setParameters(currentParameters);
         } else {
-          // Initialize with empty array if no parameters exist
-          setParameters({ excludedContentTypes: [] });
+          // Initialize with defaults if no parameters exist
+          setParameters({ 
+            excludedContentTypes: [],
+            needsUpdateMonths: 6
+          });
         }
       } catch (error) {
         console.error('Error loading content types:', error);
@@ -154,6 +170,16 @@ const ConfigScreen = () => {
     });
   };
 
+  const handleNeedsUpdateMonthsChange = (value: string) => {
+    const months = parseInt(value, 10);
+    console.log(`Needs update months changed to: ${months}`);
+    
+    setParameters(prev => ({
+      ...prev,
+      needsUpdateMonths: months
+    }));
+  };
+
   return (
     <Flex flexDirection="column" className={css({ margin: '40px', maxWidth: '800px' })}>
       <Form>
@@ -165,6 +191,27 @@ const ConfigScreen = () => {
           </Flex>
         ) : (
           <>
+            <FormControl marginBottom="spacingL">
+              <FormControl.Label>Content "Needs Update" Time Threshold</FormControl.Label>
+              <Select
+                id="needs-update-months"
+                name="needs-update-months"
+                value={parameters.needsUpdateMonths?.toString() || "6"}
+                onChange={(e) => handleNeedsUpdateMonthsChange(e.target.value)}
+              >
+                <Select.Option value="1">1 month</Select.Option>
+                <Select.Option value="2">2 months</Select.Option>
+                <Select.Option value="3">3 months</Select.Option>
+                <Select.Option value="6">6 months</Select.Option>
+                <Select.Option value="9">9 months</Select.Option>
+                <Select.Option value="12">12 months</Select.Option>
+                <Select.Option value="18">18 months</Select.Option>
+                <Select.Option value="24">24 months</Select.Option>
+              </Select>
+              <FormControl.HelpText>
+                Content will be marked as "Needs Update" when it hasn't been updated for this amount of time.
+              </FormControl.HelpText>
+            </FormControl>
 
             <FormControl>
               <FormControl.Label>Content Types to Exclude from Orphaned Entries</FormControl.Label>

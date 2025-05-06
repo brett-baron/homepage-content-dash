@@ -216,6 +216,7 @@ interface ContentTableProps {
 
 interface AppConfig {
   excludedContentTypes: string[];
+  needsUpdateMonths: number;
 }
 
 const Home = () => {
@@ -240,6 +241,7 @@ const Home = () => {
   const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
   const [orphanedContent, setOrphanedContent] = useState<EntryProps[]>([]);
   const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
+  const [needsUpdateMonths, setNeedsUpdateMonths] = useState<number>(6);
 
   // Function to get user's full name
   const getUserFullName = async (userId: string): Promise<string> => {
@@ -284,11 +286,20 @@ const Home = () => {
         if (storedConfig) {
           try {
             const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
+            
+            // Set the excluded content types
             if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
-              console.log('Loaded config from localStorage:', parsedConfig.excludedContentTypes);
+              console.log('Loaded excludedContentTypes from localStorage:', parsedConfig.excludedContentTypes);
               setExcludedContentTypes(parsedConfig.excludedContentTypes);
-              return;
             }
+            
+            // Set the needs update months threshold
+            if (parsedConfig.needsUpdateMonths && parsedConfig.needsUpdateMonths > 0) {
+              console.log('Loaded needsUpdateMonths from localStorage:', parsedConfig.needsUpdateMonths);
+              setNeedsUpdateMonths(parsedConfig.needsUpdateMonths);
+            }
+            
+            return;
           } catch (e) {
             console.error('Error parsing stored config:', e);
           }
@@ -322,7 +333,8 @@ const Home = () => {
           
           // For demo purposes, save these default values to localStorage
           localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
-            excludedContentTypes: defaultExcluded 
+            excludedContentTypes: defaultExcluded,
+            needsUpdateMonths: 6
           }));
         } catch (error) {
           console.error('Error fetching content types for defaults:', error);
@@ -352,6 +364,7 @@ const Home = () => {
         });
         console.log('Environment:', environment.name);
         console.log('Using excluded content types:', excludedContentTypes);
+        console.log('Using needs update threshold:', needsUpdateMonths, 'months');
 
         // Fetch scheduled actions for releases
         const scheduledActions = await cma.scheduledActions.getMany({
@@ -509,8 +522,10 @@ const Home = () => {
 
         // After allEntries is populated, categorize the entries
         const now = new Date();
-        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+        const needsUpdateDate = new Date(now.getFullYear(), now.getMonth() - needsUpdateMonths, now.getDate());
         const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+
+        console.log('Needs update threshold date:', needsUpdateDate.toISOString());
 
         // Filter entries into categories
         const scheduled = allEntries.filter(entry => {
@@ -527,9 +542,14 @@ const Home = () => {
         });
 
         const needsUpdate = allEntries.filter(entry => {
+          // Only include entries that have been published
+          if (!entry.sys.publishedAt) return false;
+          
           const updateDate = entry.sys.updatedAt;
-          return updateDate && new Date(updateDate) < sixMonthsAgo;
+          return updateDate && new Date(updateDate) < needsUpdateDate;
         });
+
+        console.log(`Found ${needsUpdate.length} entries that need updating (older than ${needsUpdateMonths} months)`);
 
         // Find orphaned entries (entries not referenced by any other entry)
         const entryMap = new Map<string, EntryProps>();
@@ -641,7 +661,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes, needsUpdateMonths]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -745,7 +765,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
-              <p className="text-sm text-muted-foreground mt-1">Content older than 6 months</p>
+              <p className="text-sm text-muted-foreground mt-1">Content older than {needsUpdateMonths} {needsUpdateMonths === 1 ? 'month' : 'months'}</p>
             </CardContent>
           </Card>
           <Card className="w-full relative">
@@ -776,6 +796,7 @@ const Home = () => {
             showUpdatedBy={true}
             onReschedule={handleRescheduleRelease}
             onCancel={handleCancelRelease}
+            hideActions={false}
           />
         </div>
 
@@ -787,9 +808,10 @@ const Home = () => {
           userCache={userCache}
           onResolveUser={getUserFullName}
           onOpenEntry={handleOpenEntry}
+          needsUpdateMonths={needsUpdateMonths}
         />
 
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle>Workflow & Stage Distribution</CardTitle>
             <CardDescription>Content items by workflow and stage</CardDescription>
@@ -797,7 +819,7 @@ const Home = () => {
           <CardContent>
             <WorkflowStageChart />
           </CardContent>
-        </Card>
+        </Card> */}
       </main>
     </div>
   )

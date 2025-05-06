@@ -12,6 +12,7 @@ interface ContentEntryTabsProps {
   userCache: Record<string, string>;
   onResolveUser: (userId: string) => Promise<string>;
   onOpenEntry?: (entryId: string) => void;
+  needsUpdateMonths?: number;
 }
 
 interface TransformedEntry {
@@ -83,6 +84,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   userCache,
   onResolveUser,
   onOpenEntry,
+  needsUpdateMonths = 6,
 }) => {
   const [transformedData, setTransformedData] = useState<{
     scheduled: TransformedEntry[];
@@ -216,6 +218,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           data={getDisplayData(transformedData.scheduled, 'scheduled')}
           showStage={true}
           onEntryClick={onOpenEntry}
+          hideActions={true}
         />
       </TabsContent>
       <TabsContent value="published" className="space-y-4">
@@ -224,14 +227,17 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           data={getDisplayData(transformedData.published, 'published')}
           showStage={false}
           onEntryClick={onOpenEntry}
+          hideActions={true}
         />
       </TabsContent>
       <TabsContent value="update" className="space-y-4">
         <ContentTable
-          title="Content Needing Updates"
+          title={`Content Needing Updates`}
+          description={`Content that hasn't been updated in more than ${needsUpdateMonths} ${needsUpdateMonths === 1 ? 'month' : 'months'}`}
           data={getDisplayData(transformedData.update, 'update')}
           showStage={false}
           onEntryClick={onOpenEntry}
+          hideActions={true}
         />
       </TabsContent>
       <TabsContent value="orphaned" className="space-y-4">
