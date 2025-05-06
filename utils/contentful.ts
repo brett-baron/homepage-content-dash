@@ -188,7 +188,7 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
 };
 
 // Generate chart data showing first published dates (new content)
-export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number }> => {
+export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number; percentChange?: number }> => {
   // Get published entries
   const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
     return entry.sys.firstPublishedAt;
@@ -248,104 +248,80 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
   if (oldestPublishDate) {
     oldestDate = new Date(oldestPublishDate);
     console.log(`Oldest content publish date detected: ${oldestDate.toISOString()}`);
-  }
-  
-  // Find the starting date for our chart
-  let startDate: Date;
-  if (oldestDate && oldestDate < minDate) {
-    startDate = new Date(oldestDate);
-    console.log(`Using oldest content date as start date: ${startDate.toISOString()}`);
-  } else {
-    startDate = new Date(minDate);
-    console.log(`Using minimum date (June 2024) as start date: ${startDate.toISOString()}`);
-  }
-  
-  const endDate = new Date(now);
-  console.log(`End date for chart (current date): ${endDate.toISOString()}`);
-  
-  // Set both dates to first day of their respective months
-  startDate.setDate(1);
-  endDate.setDate(1);
-  
-  console.log(`Adjusted start date (first of month): ${startDate.toISOString()}`);
-  console.log(`Adjusted end date (first of month): ${endDate.toISOString()}`);
-  
-  // Create a complete array of months from start to end date
-  const completeData: Array<{ date: string; count: number }> = [];
-  let currentDate = new Date(startDate);
-  
-  while (currentDate <= endDate) {
-    const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
     
-    completeData.push({
+    // Use the earlier of our known min date or the actual oldest date
+    if (oldestDate < minDate) {
+      minDate.setTime(oldestDate.getTime());
+      minDate.setDate(1); // Set to first of the month
+      console.log(`Using detected oldest date for chart: ${minDate.toISOString()}`);
+    }
+  }
+  
+  // Create array of all months from min date to current date
+  const months: Array<{ date: string; count: number }> = [];
+  const currentDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  let monthDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  
+  while (monthDate <= currentDate) {
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-01`;
+    const existingCount = entriesByMonth[monthKey] || 0;
+    
+    months.push({
       date: monthKey,
-      count: entriesByMonth[monthKey] || 0
+      count: existingCount
     });
     
-    // Move to next month
-    currentDate.setMonth(currentDate.getMonth() + 1);
+    // Advance to next month
+    monthDate.setMonth(monthDate.getMonth() + 1);
   }
   
-  // Log out the chart data for debugging
-  console.log('Chart data details:');
-  console.log('Oldest publish date string:', oldestPublishDate);
-  console.log('Oldest publish date:', oldestDate ? oldestDate.toISOString() : 'none');
-  console.log('Range start date:', startDate.toISOString());
-  console.log('Range end date:', endDate.toISOString());
-  console.log('Generated data points:', completeData.length);
-  
-  // For detailed logging of chart data
-  console.log('Final chart data points:');
-  completeData.forEach(point => {
-    // Manually parse the date string to ensure correct month display
-    const [year, month] = point.date.split('-');
-    // Subtract 1 from month when creating Date because JS months are 0-indexed
-    const pointDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+  // Calculate month-over-month percent changes
+  const monthsWithPercentChange = months.map((month, index, array) => {
+    if (index === 0) {
+      return { ...month, percentChange: 0 };
+    }
     
-    console.log(`  ${point.date} (${pointDate.toLocaleString('en-US', { month: 'short', year: 'numeric' })}): ${point.count} entries`);
-    // Log raw month values to debug
-    console.log(`    Raw month value: ${month}, JS Date month: ${pointDate.getMonth() + 1}`);
+    const prevCount = array[index - 1].count;
+    let percentChange = 0;
+    
+    if (prevCount > 0) {
+      percentChange = ((month.count - prevCount) / prevCount) * 100;
+    } else if (month.count > 0) {
+      percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
+    }
+    
+    return { ...month, percentChange };
   });
   
-  return completeData;
+  return monthsWithPercentChange;
 };
 
-// Generate chart data showing latest published dates (updated content)
-export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number }> => {
+// Generate chart data showing updated dates (any content updates)
+export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number; percentChange?: number }> => {
   // Get published entries
   const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
-    return entry.sys.publishedAt;
+    return entry.sys.updatedAt;
   });
 
-  console.log(`Found ${publishedEntries.length} published entries for updated chart data`);
+  console.log(`Found ${publishedEntries.length} updated entries for chart data`);
   
-  // Log the first few publish dates to verify the data
-  const sampleEntries = publishedEntries.slice(0, 5);
-  console.log('Sample publishedAt dates (first 5):');
-  sampleEntries.forEach((entry: ContentfulEntry, index) => {
-    console.log(`  ${index + 1}. Raw: ${entry.sys.publishedAt}`);
-    const date = new Date(entry.sys.publishedAt!);
-    console.log(`     Parsed: ${date.toISOString()}`);
-    console.log(`     Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}`);
-  });
-
   // Group entries by month
   const entriesByMonth: Record<string, number> = {};
   
   // Define the oldest date
-  let oldestPublishDate: string | null = null;
+  let oldestUpdateDate: string | null = null;
 
   publishedEntries.forEach((entry: ContentfulEntry) => {
-    if (entry.sys.publishedAt) {
-      const publishDate = new Date(entry.sys.publishedAt);
+    if (entry.sys.updatedAt) {
+      const updateDate = new Date(entry.sys.updatedAt);
       
       // Track the oldest date as a string for simple comparison
-      if (!oldestPublishDate || entry.sys.publishedAt < oldestPublishDate) {
-        oldestPublishDate = entry.sys.publishedAt;
+      if (!oldestUpdateDate || entry.sys.updatedAt < oldestUpdateDate) {
+        oldestUpdateDate = entry.sys.updatedAt;
       }
       
       // Format as YYYY-MM-01 to group by month
-      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      const monthKey = `${updateDate.getFullYear()}-${String(updateDate.getMonth() + 1).padStart(2, '0')}-01`;
       
       entriesByMonth[monthKey] = (entriesByMonth[monthKey] || 0) + 1;
     }
@@ -353,44 +329,60 @@ export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): A
 
   // Make sure we have a date range to work with
   const now = new Date();
-  // June 11, 2024 is known to be the oldest content publish date
+  // June 11, 2024 is known to be the oldest content update date
   const minDate = new Date(2024, 5, 1); // June 1, 2024 (zero-indexed month)
   
-  // Convert the oldest publish date to a Date object
+  console.log(`Minimum date for chart: ${minDate.toISOString()} (June 1, 2024)`);
+  
+  // Convert the oldest update date to a Date object
   let oldestDate: Date | null = null;
-  if (oldestPublishDate) {
-    oldestDate = new Date(oldestPublishDate);
-  }
-  
-  // Find the starting date for our chart
-  let startDate: Date;
-  if (oldestDate && oldestDate < minDate) {
-    startDate = new Date(oldestDate);
-  } else {
-    startDate = new Date(minDate);
-  }
-  
-  const endDate = new Date(now);
-  
-  // Set both dates to first day of their respective months
-  startDate.setDate(1);
-  endDate.setDate(1);
-  
-  // Create a complete array of months from start to end date
-  const completeData: Array<{ date: string; count: number }> = [];
-  let currentDate = new Date(startDate);
-  
-  while (currentDate <= endDate) {
-    const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+  if (oldestUpdateDate) {
+    oldestDate = new Date(oldestUpdateDate);
+    console.log(`Oldest content update date detected: ${oldestDate.toISOString()}`);
     
-    completeData.push({
+    // Use the earlier of our known min date or the actual oldest date
+    if (oldestDate < minDate) {
+      minDate.setTime(oldestDate.getTime());
+      minDate.setDate(1); // Set to first of the month
+      console.log(`Using detected oldest date for chart: ${minDate.toISOString()}`);
+    }
+  }
+  
+  // Create array of all months from min date to current date
+  const months: Array<{ date: string; count: number }> = [];
+  const currentDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  let monthDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  
+  while (monthDate <= currentDate) {
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-01`;
+    const existingCount = entriesByMonth[monthKey] || 0;
+    
+    months.push({
       date: monthKey,
-      count: entriesByMonth[monthKey] || 0
+      count: existingCount
     });
     
-    // Move to next month
-    currentDate.setMonth(currentDate.getMonth() + 1);
+    // Advance to next month
+    monthDate.setMonth(monthDate.getMonth() + 1);
   }
   
-  return completeData;
+  // Calculate month-over-month percent changes
+  const monthsWithPercentChange = months.map((month, index, array) => {
+    if (index === 0) {
+      return { ...month, percentChange: 0 };
+    }
+    
+    const prevCount = array[index - 1].count;
+    let percentChange = 0;
+    
+    if (prevCount > 0) {
+      percentChange = ((month.count - prevCount) / prevCount) * 100;
+    } else if (month.count > 0) {
+      percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
+    }
+    
+    return { ...month, percentChange };
+  });
+  
+  return monthsWithPercentChange;
 }; 

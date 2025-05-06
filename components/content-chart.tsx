@@ -28,14 +28,38 @@ const formatDate = (dateString: string) => {
 }
 
 interface ContentChartProps {
-  data?: Array<{ date: string; count: number }>
-  updatedData?: Array<{ date: string; count: number }>
+  data?: Array<{ date: string; count: number; percentChange?: number }>
+  updatedData?: Array<{ date: string; count: number; percentChange?: number }>
   title?: string
   description?: string
 }
 
 type TimeRange = 'all' | 'year' | '6months';
 type ContentType = 'new' | 'updated';
+
+// Custom tooltip component to show percentage change
+const CustomTooltip = ({ active, payload, label, contentType }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const formattedDate = formatDate(label);
+    const count = data.count;
+    const percentChange = data.percentChange;
+    
+    return (
+      <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
+        <p className="font-semibold">{formattedDate}</p>
+        <p>{`${count} ${contentType === 'new' ? "new entries" : "entries published or updated"}`}</p>
+        {percentChange !== undefined && (
+          <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
+            {percentChange >= 0 ? "+" : ""}{percentChange.toFixed(1)}% from previous month
+          </p>
+        )}
+      </div>
+    );
+  }
+  
+  return null;
+};
 
 export default function ContentChart({
   data = [],
@@ -47,6 +71,7 @@ export default function ContentChart({
   const [contentType, setContentType] = useState<ContentType>('new');
   const [filteredData, setFilteredData] = useState(data);
 
+  // Calculate percent changes for each month
   useEffect(() => {
     // Check which data source to use based on content type
     const sourceData = contentType === 'new' ? data : updatedData;
@@ -83,8 +108,27 @@ export default function ContentChart({
     };
 
     const filtered = filterData();
-    console.log(`Filtered ${contentType} data: ${filtered.length} items`);
-    setFilteredData(filtered);
+    
+    // Calculate month-over-month percentage changes
+    const filteredWithPercentage = filtered.map((item, index, array) => {
+      if (index === 0 || array.length <= 1) {
+        return { ...item, percentChange: 0 };
+      }
+      
+      const prevCount = array[index - 1].count;
+      let percentChange = 0;
+      
+      if (prevCount > 0) {
+        percentChange = ((item.count - prevCount) / prevCount) * 100;
+      } else if (item.count > 0) {
+        percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
+      }
+      
+      return { ...item, percentChange };
+    });
+    
+    console.log(`Filtered ${contentType} data: ${filteredWithPercentage.length} items`);
+    setFilteredData(filteredWithPercentage);
   }, [data, updatedData, timeRange, contentType]);
 
   return (
@@ -135,9 +179,8 @@ export default function ContentChart({
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
             <YAxis tick={{ fontSize: 12 }} tickCount={5} domain={[0, "dataMax + 5"]} />
-            <Tooltip
-              formatter={(value) => [`${value} entries`, contentType === 'new' ? "New Content" : "New & Updated Content"]}
-              labelFormatter={formatDate}
+            <Tooltip 
+              content={<CustomTooltip contentType={contentType} />}
               contentStyle={{
                 borderRadius: "0.5rem",
                 border: "none",
