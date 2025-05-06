@@ -23,63 +23,87 @@ const formatDate = (dateString: string) => {
   // Create a date with the correct month (subtract 1 because JS months are 0-indexed)
   const date = new Date(parseInt(year), parseInt(month) - 1, 1);
   
-  // Debug to verify the correct month
-  console.log(`Formatting ${dateString} as ${date.toLocaleDateString("en-US", { month: "short", year: "numeric" })}`);
-  
+  // Debug to verify the correct month  
   return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
 interface ContentChartProps {
   data?: Array<{ date: string; count: number }>
+  updatedData?: Array<{ date: string; count: number }>
   title?: string
   description?: string
 }
 
 type TimeRange = 'all' | 'year' | '6months';
+type ContentType = 'new' | 'updated';
 
 export default function ContentChart({
   data = [],
+  updatedData = [],
   title,
   description,
 }: ContentChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('year');
+  const [contentType, setContentType] = useState<ContentType>('new');
   const [filteredData, setFilteredData] = useState(data);
 
   useEffect(() => {
-    if (!data || data.length === 0) return;
+    // Check which data source to use based on content type
+    const sourceData = contentType === 'new' ? data : updatedData;
+    
+    // Return early only if the selected sourceData is empty
+    if (!sourceData || sourceData.length === 0) {
+      console.log(`Selected data source (${contentType}) is empty`);
+      return;
+    }
 
     const currentDate = new Date();
+    
     const filterData = () => {
       switch (timeRange) {
         case 'all':
-          return [...data];
+          return [...sourceData];
         case 'year':
           const oneYearAgo = new Date(
             currentDate.getFullYear() - 1,
             currentDate.getMonth(),
             currentDate.getDate()
           );
-          return data.filter(item => new Date(item.date) >= oneYearAgo);
+          return sourceData.filter(item => new Date(item.date) >= oneYearAgo);
         case '6months':
           const sixMonthsAgo = new Date(
             currentDate.getFullYear(),
             currentDate.getMonth() - 6,
             currentDate.getDate()
           );
-          return data.filter(item => new Date(item.date) >= sixMonthsAgo);
+          return sourceData.filter(item => new Date(item.date) >= sixMonthsAgo);
         default:
-          return [...data];
+          return [...sourceData];
       }
     };
 
-    setFilteredData(filterData());
-  }, [data, timeRange]);
+    const filtered = filterData();
+    console.log(`Filtered ${contentType} data: ${filtered.length} items`);
+    setFilteredData(filtered);
+  }, [data, updatedData, timeRange, contentType]);
 
   return (
     <div className="w-full rounded-xl bg-white p-6 shadow-sm">
       <div className="mb-6 flex justify-between items-center">
-        <div>
+        <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+          <Select value={contentType} onValueChange={(value) => setContentType(value as ContentType)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Content type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>View</SelectLabel>
+                <SelectItem value="new">New Content</SelectItem>
+                <SelectItem value="updated">New & Updated</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <p className="text-sm text-gray-500">{description}</p>
         </div>
         <Select value={timeRange} onValueChange={(value) => setTimeRange(value as TimeRange)}>
@@ -112,7 +136,7 @@ export default function ContentChart({
             <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
             <YAxis tick={{ fontSize: 12 }} tickCount={5} domain={[0, "dataMax + 5"]} />
             <Tooltip
-              formatter={(value) => [`${value} entries`, "Published Content"]}
+              formatter={(value) => [`${value} entries`, contentType === 'new' ? "New Content" : "New & Updated Content"]}
               labelFormatter={formatDate}
               contentStyle={{
                 borderRadius: "0.5rem",
@@ -124,7 +148,7 @@ export default function ContentChart({
             <Line
               type="monotone"
               dataKey="count"
-              name="Content Published"
+              name={contentType === 'new' ? "New Content" : "New & Updated Content"}
               stroke="#3b82f6"
               strokeWidth={2}
               dot={{ r: 4, strokeWidth: 2 }}

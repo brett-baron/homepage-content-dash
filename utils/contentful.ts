@@ -44,6 +44,7 @@ interface ContentStats {
 type ContentfulEntry = EntryProps & {
   sys: EntryProps['sys'] & {
     publishedAt?: string;
+    firstPublishedAt?: string;
   };
 };
 
@@ -148,10 +149,11 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   };
 };
 
+// Generate chart data showing first published dates (new content)
 export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number }> => {
   // Get published entries
   const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
-    return entry.sys.publishedAt;
+    return entry.sys.firstPublishedAt;
   });
 
   console.log(`Found ${publishedEntries.length} published entries for chart data`);
@@ -159,9 +161,9 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
   // Log the first few publish dates to verify the data
   const sampleEntries = publishedEntries.slice(0, 5);
   console.log('Sample publish dates (first 5):');
-  sampleEntries.forEach((entry, index) => {
-    console.log(`  ${index + 1}. Raw: ${entry.sys.publishedAt}`);
-    const date = new Date(entry.sys.publishedAt!);
+  sampleEntries.forEach((entry: ContentfulEntry, index) => {
+    console.log(`  ${index + 1}. Raw: ${entry.sys.firstPublishedAt}`);
+    const date = new Date(entry.sys.firstPublishedAt!);
     console.log(`     Parsed: ${date.toISOString()}`);
     console.log(`     Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}`);
   });
@@ -173,12 +175,12 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
   let oldestPublishDate: string | null = null;
 
   publishedEntries.forEach((entry: ContentfulEntry) => {
-    if (entry.sys.publishedAt) {
-      const publishDate = new Date(entry.sys.publishedAt);
+    if (entry.sys.firstPublishedAt) {
+      const publishDate = new Date(entry.sys.firstPublishedAt);
       
       // Track the oldest date as a string for simple comparison
-      if (!oldestPublishDate || entry.sys.publishedAt < oldestPublishDate) {
-        oldestPublishDate = entry.sys.publishedAt;
+      if (!oldestPublishDate || entry.sys.firstPublishedAt < oldestPublishDate) {
+        oldestPublishDate = entry.sys.firstPublishedAt;
       }
       
       // Format as YYYY-MM-01 to group by month
@@ -266,6 +268,91 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
     // Log raw month values to debug
     console.log(`    Raw month value: ${month}, JS Date month: ${pointDate.getMonth() + 1}`);
   });
+  
+  return completeData;
+};
+
+// Generate chart data showing latest published dates (updated content)
+export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number }> => {
+  // Get published entries
+  const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
+    return entry.sys.publishedAt;
+  });
+
+  console.log(`Found ${publishedEntries.length} published entries for updated chart data`);
+  
+  // Log the first few publish dates to verify the data
+  const sampleEntries = publishedEntries.slice(0, 5);
+  console.log('Sample publishedAt dates (first 5):');
+  sampleEntries.forEach((entry: ContentfulEntry, index) => {
+    console.log(`  ${index + 1}. Raw: ${entry.sys.publishedAt}`);
+    const date = new Date(entry.sys.publishedAt!);
+    console.log(`     Parsed: ${date.toISOString()}`);
+    console.log(`     Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}`);
+  });
+
+  // Group entries by month
+  const entriesByMonth: Record<string, number> = {};
+  
+  // Define the oldest date
+  let oldestPublishDate: string | null = null;
+
+  publishedEntries.forEach((entry: ContentfulEntry) => {
+    if (entry.sys.publishedAt) {
+      const publishDate = new Date(entry.sys.publishedAt);
+      
+      // Track the oldest date as a string for simple comparison
+      if (!oldestPublishDate || entry.sys.publishedAt < oldestPublishDate) {
+        oldestPublishDate = entry.sys.publishedAt;
+      }
+      
+      // Format as YYYY-MM-01 to group by month
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      entriesByMonth[monthKey] = (entriesByMonth[monthKey] || 0) + 1;
+    }
+  });
+
+  // Make sure we have a date range to work with
+  const now = new Date();
+  // June 11, 2024 is known to be the oldest content publish date
+  const minDate = new Date(2024, 5, 1); // June 1, 2024 (zero-indexed month)
+  
+  // Convert the oldest publish date to a Date object
+  let oldestDate: Date | null = null;
+  if (oldestPublishDate) {
+    oldestDate = new Date(oldestPublishDate);
+  }
+  
+  // Find the starting date for our chart
+  let startDate: Date;
+  if (oldestDate && oldestDate < minDate) {
+    startDate = new Date(oldestDate);
+  } else {
+    startDate = new Date(minDate);
+  }
+  
+  const endDate = new Date(now);
+  
+  // Set both dates to first day of their respective months
+  startDate.setDate(1);
+  endDate.setDate(1);
+  
+  // Create a complete array of months from start to end date
+  const completeData: Array<{ date: string; count: number }> = [];
+  let currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
+    const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+    
+    completeData.push({
+      date: monthKey,
+      count: entriesByMonth[monthKey] || 0
+    });
+    
+    // Move to next month
+    currentDate.setMonth(currentDate.getMonth() + 1);
+  }
   
   return completeData;
 }; 

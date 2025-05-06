@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
 import { WorkflowStageChart } from "@/components/workflow-stage-chart"
-import { getContentStats, generateChartData } from '../../utils/contentful';
+import { getContentStats, generateChartData, generateUpdatedChartData } from '../../utils/contentful';
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 
@@ -225,6 +225,7 @@ const Home = () => {
     previousMonthPublished: 0,
   });
   const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
+  const [updatedChartData, setUpdatedChartData] = useState<Array<{ date: string; count: number }>>([]);
   const [scheduledReleases, setScheduledReleases] = useState<ScheduledRelease[]>([]);
   const [userCache, setUserCache] = useState<UserCache>({});
   
@@ -421,10 +422,15 @@ const Home = () => {
         console.log('Calculated stats:', contentStats);
         setStats(contentStats);
         
-        // Generate chart data from entries
+        // Generate chart data from entries (for new content)
         const chartDataFromEntries = generateChartData(entries);
         console.log('Chart data:', chartDataFromEntries);
         setChartData(chartDataFromEntries);
+        
+        // Generate chart data for updated content
+        const updatedDataFromEntries = generateUpdatedChartData(entries);
+        console.log('Updated chart data:', updatedDataFromEntries);
+        setUpdatedChartData(updatedDataFromEntries);
 
         // After allEntries is populated, categorize the entries
         const now = new Date();
@@ -549,6 +555,7 @@ const Home = () => {
         </div>
         <ContentChart
           data={chartData.length > 0 ? chartData : contentData}
+          updatedData={updatedChartData.length > 0 ? updatedChartData : contentData}
           title="Content Trends"
         />
         {/* Upcoming Releases Section */}
