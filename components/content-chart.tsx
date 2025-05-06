@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts"
 import { useState, useEffect } from "react"
 import {
   Select,
@@ -126,7 +126,7 @@ export default function ContentChart({
           <LineChart
             data={filteredData}
             margin={{
-              top: 5,
+              top: 30,
               right: 30,
               left: 20,
               bottom: 25,
@@ -153,7 +153,16 @@ export default function ContentChart({
               strokeWidth={2}
               dot={{ r: 4, strokeWidth: 2 }}
               activeDot={{ r: 6, strokeWidth: 2 }}
-            />
+            >
+              <LabelList 
+                dataKey="count" 
+                position="top" 
+                offset={10}
+                className="fill-foreground" 
+                fontSize={15}
+                formatter={(value: number) => value}
+              />
+            </Line>
           </LineChart>
         </ResponsiveContainer>
       </div>
