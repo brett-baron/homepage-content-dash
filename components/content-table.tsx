@@ -33,6 +33,7 @@ interface ContentItem {
   stage?: string
   date?: string
   isShowMoreRow?: boolean
+  needsUpdate?: boolean
 }
 
 interface ScheduledRelease {
@@ -57,6 +58,7 @@ interface ContentTableProps {
   onReschedule?: (releaseId: string, newDateTime: string) => Promise<void>
   onCancel?: (releaseId: string) => Promise<void>
   onEntryClick?: (entryId: string) => void
+  hideActions?: boolean
 }
 
 const formatDateTime = (dateTimeStr: string) => {
@@ -87,7 +89,8 @@ export function ContentTable({
   showUpdatedBy = false,
   onReschedule,
   onCancel,
-  onEntryClick
+  onEntryClick,
+  hideActions = false
 }: ContentTableProps) {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -101,6 +104,20 @@ export function ContentTable({
 
   // Check if the data is ScheduledRelease[]
   const isScheduledReleaseData = data.length > 0 && 'scheduledDateTime' in data[0];
+
+  // Only sort if it's a scheduled release table - otherwise respect pre-sorted order from ContentEntryTabs
+  const sortedData = isScheduledReleaseData 
+    ? [...data].sort((a, b) => {
+        // Skip sorting for special rows like "Show More"
+        if (a.isShowMoreRow || b.isShowMoreRow) {
+          return 0;
+        }
+        
+        // For scheduled releases, sort by scheduled date/time
+        return new Date((a as ScheduledRelease).scheduledDateTime).getTime() - 
+               new Date((b as ScheduledRelease).scheduledDateTime).getTime();
+      }) 
+    : data; // Use data as-is (already sorted by ContentEntryTabs)
 
   const handleViewRelease = (release: ScheduledRelease) => {
     const baseUrl = 'https://launch.contentful.com';
@@ -263,11 +280,11 @@ export function ContentTable({
                   <Table.Cell>Published Date</Table.Cell>
                 </>
               )}
-              <Table.Cell></Table.Cell>
+              {!hideActions && <Table.Cell></Table.Cell>}
             </Table.Row>
           </Table.Head>
           <Table.Body>
-            {data.map((item) => (
+            {sortedData.map((item) => (
               <Table.Row 
                 key={item.id}
                 className={item.isShowMoreRow ? 'hover:bg-transparent border-0' : undefined}
@@ -336,7 +353,7 @@ export function ContentTable({
                     </>
                   )
                 )}
-                {!item.isShowMoreRow && (
+                {!hideActions && !item.isShowMoreRow && (
                   <Table.Cell>
                     <Menu>
                       <Menu.Trigger>

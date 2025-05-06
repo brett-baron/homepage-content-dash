@@ -24,6 +24,7 @@ interface TransformedEntry {
   date: string;
   isShowMoreRow?: boolean;
   contentType: string;
+  needsUpdate?: boolean;
 }
 
 const getEntryTitle = (entry: EntryProps): string => {
@@ -134,17 +135,22 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
     };
 
     const updateTransformedData = async () => {
-      const [scheduled, published, update, orphaned] = await Promise.all([
-        transformEntries(scheduledContent),
-        transformEntries(recentlyPublishedContent),
-        transformEntries(needsUpdateContent),
-        transformEntries(orphanedContent),
-      ]);
+      const scheduled = await transformEntries(scheduledContent);
+      const published = await transformEntries(recentlyPublishedContent);
+      
+      // Mark entries that need updates with the needsUpdate flag
+      const update = await transformEntries(needsUpdateContent);
+      const updateWithFlag = update.map(entry => ({
+        ...entry,
+        needsUpdate: true
+      }));
+      
+      const orphaned = await transformEntries(orphanedContent);
 
       setTransformedData({
         scheduled,
         published,
-        update,
+        update: updateWithFlag,
         orphaned,
       });
     };
@@ -153,11 +159,22 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, orphanedContent, userCache, onResolveUser]);
 
   const getDisplayData = (data: TransformedEntry[], type: 'scheduled' | 'published' | 'update' | 'orphaned') => {
+    // Pre-sort the data depending on the type
+    let sortedData = [...data];
+    
+    if (type === 'update') {
+      // Needs Update: Sort by oldest published date first (ascending)
+      sortedData.sort((a, b) => new Date(a.date || '').getTime() - new Date(b.date || '').getTime());
+    } else {
+      // Other tabs: Sort by newest first (descending)
+      sortedData.sort((a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime());
+    }
+    
     const limit = showMore[type] ? 20 : 5;
-    const displayData = data.slice(0, limit);
+    const displayData = sortedData.slice(0, limit);
     
     // If we have more than 5 items, add the show more/less row
-    if (data.length > 5) {
+    if (sortedData.length > 5) {
       const showMoreContent = (
         <div 
           className="flex items-center justify-center w-full gap-2 text-muted-foreground hover:text-foreground cursor-pointer py-2" 
@@ -229,6 +246,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           data={getDisplayData(transformedData.orphaned, 'orphaned')}
           showStage={false}
           onEntryClick={onOpenEntry}
+          hideActions={true}
         />
       </TabsContent>
     </Tabs>
