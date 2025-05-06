@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, GitBranchPlus } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
@@ -691,15 +691,17 @@ const Home = () => {
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <h1 className="text-2xl font-bold">Content Dashboard</h1>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Published Content</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+        <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 w-full">
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <FileText className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Total Published</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalPublished}</div>
-              <p className="text-xs text-muted-foreground">
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.totalPublished}</div>
+              <p className="text-xs text-muted-foreground mt-1">
                 {stats.previousMonthPublished === 0
                 ? 'No content published last month'
                 : (
@@ -710,34 +712,52 @@ const Home = () => {
               </p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Scheduled</CardTitle>
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <CalendarDays className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Scheduled</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.scheduledCount}</div>
-              <p className="text-xs text-muted-foreground">For the next 30 days</p>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.scheduledCount}</div>
+              <p className="text-xs text-muted-foreground mt-1">For the next 30 days</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recently Published</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <Clock className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Recently Published</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.recentlyPublishedCount}</div>
-              <p className="text-xs text-muted-foreground">In the last 7 days</p>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.recentlyPublishedCount}</div>
+              <p className="text-xs text-muted-foreground mt-1">In the last 7 days</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Needs Update</CardTitle>
-              <Edit className="h-4 w-4 text-muted-foreground" />
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <Edit className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Needs Update</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.needsUpdateCount}</div>
-              <p className="text-xs text-muted-foreground">Content older than 6 months</p>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
+              <p className="text-xs text-muted-foreground mt-1">Content older than 6 months</p>
+            </CardContent>
+          </Card>
+          <Card className="w-full relative">
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <GitBranchPlus className="h-8 w-8 text-primary" />
+            </div>
+            <CardHeader className="pb-1 pt-2 px-3 pr-14">
+              <CardTitle className="text-sm font-semibold">Orphaned Content</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-3 pt-0 px-3 pr-14">
+              <div className="text-3xl font-bold">{orphanedContent.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Entries with no references</p>
             </CardContent>
           </Card>
         </div>
