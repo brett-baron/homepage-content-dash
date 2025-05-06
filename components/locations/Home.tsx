@@ -702,8 +702,8 @@ const Home = () => {
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.totalPublished}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                {stats.previousMonthPublished === 0
-                ? 'No content published last month'
+                {stats.previousMonthPublished === 0 && stats.percentChange === 0
+                ? 'No content published recently'
                 : (
                   <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
                     {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month

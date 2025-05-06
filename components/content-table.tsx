@@ -260,7 +260,7 @@ export function ContentTable({
                   <Table.Cell>Author</Table.Cell>
                   {showStage && <Table.Cell>Stage</Table.Cell>}
                   <Table.Cell>Content Type</Table.Cell>
-                  <Table.Cell>Date</Table.Cell>
+                  <Table.Cell>Published Date</Table.Cell>
                 </>
               )}
               <Table.Cell></Table.Cell>
