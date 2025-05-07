@@ -802,7 +802,7 @@ const Home = () => {
                     ? 'No new content published recently'
                     : (
                       <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
-                        {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} from last month
+                        {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
                       </span>
                     )}
                   </p>
