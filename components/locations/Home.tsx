@@ -683,6 +683,92 @@ const Home = () => {
     window.open(url, '_blank');
   };
 
+  // Handle archiving entries
+  const handleArchiveEntries = async (entryIds: string[]) => {
+    if (!entryIds.length) return;
+    
+    setIsLoading(true);
+    try {
+      // Archive each entry
+      for (const entryId of entryIds) {
+        try {
+          // First fetch the entry to get its version
+          const entry = await cma.entry.get({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment,
+            entryId
+          });
+          
+          // Then archive it
+          await cma.entry.archive({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment,
+            entryId,
+          });
+        } catch (error) {
+          console.error(`Error archiving entry ${entryId}:`, error);
+          // Continue with other entries even if one fails
+        }
+      }
+      
+      // Update orphaned content state by removing archived entries
+      setOrphanedContent(prev => prev.filter(entry => !entryIds.includes(entry.sys.id)));
+      
+      // Show success notification
+      sdk.notifier.success(`Successfully archived ${entryIds.length} ${entryIds.length === 1 ? 'entry' : 'entries'}`);
+    } catch (error) {
+      console.error('Error archiving entries:', error);
+      sdk.notifier.error('Some entries could not be archived. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle unpublishing entries
+  const handleUnpublishEntries = async (entryIds: string[]) => {
+    if (!entryIds.length) return;
+    
+    setIsLoading(true);
+    try {
+      // Unpublish each entry
+      for (const entryId of entryIds) {
+        try {
+          // Unpublish the entry
+          await cma.entry.unpublish({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment,
+            entryId
+          });
+        } catch (error) {
+          console.error(`Error unpublishing entry ${entryId}:`, error);
+          // Continue with other entries even if one fails
+        }
+      }
+      
+      // Update orphaned content state by updating the unpublished entries' status
+      setOrphanedContent(prev => prev.map(entry => {
+        if (entryIds.includes(entry.sys.id)) {
+          return {
+            ...entry,
+            sys: {
+              ...entry.sys,
+              publishedVersion: undefined
+            }
+          };
+        }
+        return entry;
+      }));
+      
+      // Show success notification
+      sdk.notifier.success(`Successfully unpublished ${entryIds.length} ${entryIds.length === 1 ? 'entry' : 'entries'}`);
+    } catch (error) {
+      console.error('Error unpublishing entries:', error);
+      sdk.notifier.error('Some entries could not be unpublished. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -800,6 +886,8 @@ const Home = () => {
               onOpenEntry={handleOpenEntry}
               needsUpdateMonths={needsUpdateMonths}
               recentlyPublishedDays={recentlyPublishedDays}
+              onArchiveEntries={handleArchiveEntries}
+              onUnpublishEntries={handleUnpublishEntries}
             />
 
             {/* <Card>

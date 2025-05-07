@@ -14,6 +14,8 @@ interface ContentEntryTabsProps {
   onOpenEntry?: (entryId: string) => void;
   needsUpdateMonths?: number;
   recentlyPublishedDays?: number;
+  onArchiveEntries?: (entryIds: string[]) => Promise<void>;
+  onUnpublishEntries?: (entryIds: string[]) => Promise<void>;
 }
 
 interface TransformedEntry {
@@ -87,6 +89,8 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   onOpenEntry,
   needsUpdateMonths = 6,
   recentlyPublishedDays = 7,
+  onArchiveEntries,
+  onUnpublishEntries,
 }) => {
   const [transformedData, setTransformedData] = useState<{
     scheduled: TransformedEntry[];
@@ -248,14 +252,15 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           title="Content that is not referenced"
           description={
             "Entries that are not linked by any other content. " +
-            (localStorage.getItem('contentDashboardConfig') ? 
-              `Some content types are excluded from this view based on your configuration.` : 
-              "No content types are currently excluded from this view.")
+            "This excludes system content types like settings and navigation."
           }
           data={getDisplayData(transformedData.orphaned, 'orphaned')}
           showStage={false}
           onEntryClick={onOpenEntry}
-          hideActions={true}
+          hideActions={false}
+          isOrphanedContent={true}
+          onArchiveEntries={onArchiveEntries}
+          onUnpublishEntries={onUnpublishEntries}
         />
       </TabsContent>
     </Tabs>
