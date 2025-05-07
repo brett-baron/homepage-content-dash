@@ -13,6 +13,7 @@ interface ContentEntryTabsProps {
   onResolveUser: (userId: string) => Promise<string>;
   onOpenEntry?: (entryId: string) => void;
   needsUpdateMonths?: number;
+  recentlyPublishedDays?: number;
 }
 
 interface TransformedEntry {
@@ -85,6 +86,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   onResolveUser,
   onOpenEntry,
   needsUpdateMonths = 6,
+  recentlyPublishedDays = 7,
 }) => {
   const [transformedData, setTransformedData] = useState<{
     scheduled: TransformedEntry[];
@@ -224,6 +226,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
       <TabsContent value="published" className="space-y-4">
         <ContentTable
           title="Recently Published Content"
+          description={`Content published in the last ${recentlyPublishedDays} ${recentlyPublishedDays === 1 ? 'day' : 'days'}`}
           data={getDisplayData(transformedData.published, 'published')}
           showStage={false}
           onEntryClick={onOpenEntry}

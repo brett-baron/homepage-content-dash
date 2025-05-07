@@ -48,7 +48,12 @@ type ContentfulEntry = EntryProps & {
   };
 };
 
-export const getContentStats = async (entries: CollectionProp<EntryProps>, actions: any[]): Promise<ContentStats> => {
+export const getContentStats = async (
+  entries: CollectionProp<EntryProps>, 
+  actions: any[],
+  recentlyPublishedDays: number = 7,
+  needsUpdateMonths: number = 6
+): Promise<ContentStats> => {
   const now = new Date();
   console.log('Current date:', now.toISOString());
   
@@ -61,11 +66,14 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   console.log('Previous month start:', previousMonth.toISOString());
   console.log('Two months ago start:', twoMonthsAgo.toISOString());
   
-  // For other calculations (7 days, 6 months)
+  // For other calculations (configured days, needs update months)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  const recentlyPublishedDate = new Date(now.getTime() - recentlyPublishedDays * 24 * 60 * 60 * 1000);
+  const needsUpdateDate = new Date(now.getTime() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000);
 
+  console.log(`Recently published threshold (${recentlyPublishedDays} days):`, recentlyPublishedDate.toISOString());
+  console.log(`Needs update threshold (${needsUpdateMonths} months):`, needsUpdateDate.toISOString());
+  
   console.log('Processing entries:', entries.items.length);
   console.log('Sample entry sys:', entries.items[0]?.sys);
 
@@ -161,21 +169,21 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   const scheduledCount = scheduledEntryIds.size;
   console.log('Total scheduled entries:', scheduledCount);
 
-  // Get recently published count (last 7 days)
+  // Get recently published count (based on configured days)
   const recentlyPublishedCount = publishedEntries.filter((entry: ContentfulEntry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= sevenDaysAgo;
+    return publishDate >= recentlyPublishedDate;
   }).length;
 
-  console.log('Recently published count:', recentlyPublishedCount);
+  console.log(`Recently published count (last ${recentlyPublishedDays} days):`, recentlyPublishedCount);
 
-  // Get needs update count (published more than 6 months ago)
+  // Get needs update count (published more than configured months ago)
   const needsUpdateCount = publishedEntries.filter((entry: ContentfulEntry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate <= sixMonthsAgo;
+    return publishDate <= needsUpdateDate;
   }).length;
 
-  console.log('Needs update count:', needsUpdateCount);
+  console.log(`Needs update count (older than ${needsUpdateMonths} months):`, needsUpdateCount);
 
   return {
     totalPublished,

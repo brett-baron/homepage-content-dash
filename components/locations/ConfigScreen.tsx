@@ -8,12 +8,16 @@ import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 export interface AppInstallationParameters {
   excludedContentTypes?: string[];
   needsUpdateMonths?: number;
+  defaultTimeRange?: 'all' | 'year' | '6months';
+  recentlyPublishedDays?: number;
 }
 
 const ConfigScreen = () => {
   const [parameters, setParameters] = useState<AppInstallationParameters>({
     excludedContentTypes: [],
-    needsUpdateMonths: 6
+    needsUpdateMonths: 6,
+    defaultTimeRange: 'year',
+    recentlyPublishedDays: 7
   });
   const [contentTypes, setContentTypes] = useState<Array<{ id: string; name: string }>>([]);
   const [filteredContentTypes, setFilteredContentTypes] = useState<Array<{ id: string; name: string }>>([]);
@@ -97,6 +101,16 @@ const ConfigScreen = () => {
                 parsedConfig.needsUpdateMonths = 6; // Default to 6 months
               }
               
+              // Ensure we have a valid defaultTimeRange
+              if (!parsedConfig.defaultTimeRange || !['all', 'year', '6months'].includes(parsedConfig.defaultTimeRange)) {
+                parsedConfig.defaultTimeRange = 'year'; // Default to year
+              }
+              
+              // Ensure we have a valid recentlyPublishedDays
+              if (!parsedConfig.recentlyPublishedDays || parsedConfig.recentlyPublishedDays < 1) {
+                parsedConfig.recentlyPublishedDays = 7; // Default to 7 days
+              }
+              
               setParameters(parsedConfig);
               console.log('Loaded and filtered configuration from localStorage:', parsedConfig);
               setIsLoading(false);
@@ -116,12 +130,25 @@ const ConfigScreen = () => {
           if (!currentParameters.needsUpdateMonths) {
             currentParameters.needsUpdateMonths = 6;
           }
+
+          // Ensure default defaultTimeRange if not set
+          if (!currentParameters.defaultTimeRange) {
+            currentParameters.defaultTimeRange = 'year';
+          }
+          
+          // Ensure default recentlyPublishedDays if not set
+          if (!currentParameters.recentlyPublishedDays) {
+            currentParameters.recentlyPublishedDays = 7;
+          }
+          
           setParameters(currentParameters);
         } else {
           // Initialize with defaults if no parameters exist
           setParameters({ 
             excludedContentTypes: [],
-            needsUpdateMonths: 6
+            needsUpdateMonths: 6,
+            defaultTimeRange: 'year',
+            recentlyPublishedDays: 7
           });
         }
       } catch (error) {
@@ -180,6 +207,25 @@ const ConfigScreen = () => {
     }));
   };
 
+  const handleDefaultTimeRangeChange = (value: string) => {
+    console.log(`Default time range changed to: ${value}`);
+    
+    setParameters(prev => ({
+      ...prev,
+      defaultTimeRange: value as 'all' | 'year' | '6months'
+    }));
+  };
+
+  const handleRecentlyPublishedDaysChange = (value: string) => {
+    const days = parseInt(value, 10);
+    console.log(`Recently published days changed to: ${days}`);
+    
+    setParameters(prev => ({
+      ...prev,
+      recentlyPublishedDays: days
+    }));
+  };
+
   return (
     <Flex flexDirection="column" className={css({ margin: '40px', maxWidth: '800px' })}>
       <Form>
@@ -210,6 +256,42 @@ const ConfigScreen = () => {
               </Select>
               <FormControl.HelpText>
                 Content will be marked as "Needs Update" when it hasn't been updated for this amount of time.
+              </FormControl.HelpText>
+            </FormControl>
+
+            <FormControl marginBottom="spacingL">
+              <FormControl.Label>Default Time Range for Content Trends</FormControl.Label>
+              <Select
+                id="default-time-range"
+                name="default-time-range"
+                value={parameters.defaultTimeRange || "year"}
+                onChange={(e) => handleDefaultTimeRangeChange(e.target.value)}
+              >
+                <Select.Option value="all">All Time</Select.Option>
+                <Select.Option value="year">Past Year</Select.Option>
+                <Select.Option value="6months">Last 6 Months</Select.Option>
+              </Select>
+              <FormControl.HelpText>
+                The default time period to display in content trend charts.
+              </FormControl.HelpText>
+            </FormControl>
+
+            <FormControl marginBottom="spacingL">
+              <FormControl.Label>"Recently Published" Time Period</FormControl.Label>
+              <Select
+                id="recently-published-days"
+                name="recently-published-days"
+                value={parameters.recentlyPublishedDays?.toString() || "7"}
+                onChange={(e) => handleRecentlyPublishedDaysChange(e.target.value)}
+              >
+                <Select.Option value="1">1 day</Select.Option>
+                <Select.Option value="3">3 days</Select.Option>
+                <Select.Option value="7">7 days</Select.Option>
+                <Select.Option value="14">14 days</Select.Option>
+                <Select.Option value="30">30 days</Select.Option>
+              </Select>
+              <FormControl.HelpText>
+                Content will be considered "Recently Published" if it was published within this time period.
               </FormControl.HelpText>
             </FormControl>
 

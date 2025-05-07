@@ -67,7 +67,24 @@ export default function ContentChart({
   title,
   description,
 }: ContentChartProps) {
-  const [timeRange, setTimeRange] = useState<TimeRange>('year');
+  // Get the default time range from localStorage if available
+  const getDefaultTimeRange = (): TimeRange => {
+    try {
+      const storedConfig = localStorage.getItem('contentDashboardConfig');
+      if (storedConfig) {
+        const parsedConfig = JSON.parse(storedConfig);
+        if (parsedConfig && parsedConfig.defaultTimeRange && 
+            ['all', 'year', '6months'].includes(parsedConfig.defaultTimeRange)) {
+          return parsedConfig.defaultTimeRange as TimeRange;
+        }
+      }
+    } catch (error) {
+      console.error('Error reading default time range from config:', error);
+    }
+    return 'year'; // Fallback to default
+  };
+
+  const [timeRange, setTimeRange] = useState<TimeRange>(getDefaultTimeRange());
   const [contentType, setContentType] = useState<ContentType>('new');
   const [filteredData, setFilteredData] = useState(data);
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);

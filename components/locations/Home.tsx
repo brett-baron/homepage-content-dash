@@ -217,6 +217,7 @@ interface ContentTableProps {
 interface AppConfig {
   excludedContentTypes: string[];
   needsUpdateMonths: number;
+  recentlyPublishedDays: number;
 }
 
 const Home = () => {
@@ -242,6 +243,7 @@ const Home = () => {
   const [orphanedContent, setOrphanedContent] = useState<EntryProps[]>([]);
   const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
   const [needsUpdateMonths, setNeedsUpdateMonths] = useState<number>(6);
+  const [recentlyPublishedDays, setRecentlyPublishedDays] = useState<number>(7);
 
   // Function to get user's full name
   const getUserFullName = async (userId: string): Promise<string> => {
@@ -299,6 +301,12 @@ const Home = () => {
               setNeedsUpdateMonths(parsedConfig.needsUpdateMonths);
             }
             
+            // Set the recently published days threshold
+            if (parsedConfig.recentlyPublishedDays && parsedConfig.recentlyPublishedDays > 0) {
+              console.log('Loaded recentlyPublishedDays from localStorage:', parsedConfig.recentlyPublishedDays);
+              setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays);
+            }
+            
             return;
           } catch (e) {
             console.error('Error parsing stored config:', e);
@@ -334,7 +342,8 @@ const Home = () => {
           // For demo purposes, save these default values to localStorage
           localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
             excludedContentTypes: defaultExcluded,
-            needsUpdateMonths: 6
+            needsUpdateMonths: 6,
+            recentlyPublishedDays: 7
           }));
         } catch (error) {
           console.error('Error fetching content types for defaults:', error);
@@ -365,6 +374,7 @@ const Home = () => {
         console.log('Environment:', environment.name);
         console.log('Using excluded content types:', excludedContentTypes);
         console.log('Using needs update threshold:', needsUpdateMonths, 'months');
+        console.log('Using recently published threshold:', recentlyPublishedDays, 'days');
 
         // Fetch scheduled actions for releases
         const scheduledActions = await cma.scheduledActions.getMany({
@@ -506,7 +516,12 @@ const Home = () => {
         console.log('Total entries:', entries.items.length);
         console.log('Sample entry:', entries.items[0]);
         
-        const contentStats = await getContentStats(entries, scheduledActions.items);
+        const contentStats = await getContentStats(
+          entries, 
+          scheduledActions.items,
+          recentlyPublishedDays,
+          needsUpdateMonths
+        );
         console.log('Calculated stats:', contentStats);
         setStats(contentStats);
         
@@ -523,9 +538,10 @@ const Home = () => {
         // After allEntries is populated, categorize the entries
         const now = new Date();
         const needsUpdateDate = new Date(now.getFullYear(), now.getMonth() - needsUpdateMonths, now.getDate());
-        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        const recentlyPublishedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - recentlyPublishedDays);
 
         console.log('Needs update threshold date:', needsUpdateDate.toISOString());
+        console.log('Recently published threshold date:', recentlyPublishedDate.toISOString());
 
         // Filter entries into categories
         const scheduled = allEntries.filter(entry => {
@@ -538,7 +554,7 @@ const Home = () => {
 
         const recentlyPublished = allEntries.filter(entry => {
           const publishDate = entry.sys.publishedAt;
-          return publishDate && new Date(publishDate) > sevenDaysAgo;
+          return publishDate && new Date(publishDate) > recentlyPublishedDate;
         });
 
         const needsUpdate = allEntries.filter(entry => {
@@ -661,7 +677,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes, needsUpdateMonths]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes, needsUpdateMonths, recentlyPublishedDays]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -726,7 +742,7 @@ const Home = () => {
                 ? 'No new content published recently'
                 : (
                   <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
-                    {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% {stats.percentChange >= 0 ? 'increase' : 'decrease'} from last month
+                    {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} from last month
                   </span>
                 )}
               </p>
@@ -753,7 +769,7 @@ const Home = () => {
             </CardHeader>
             <CardContent className="pb-3 pt-0 px-3 pr-14">
               <div className="text-3xl font-bold">{stats.recentlyPublishedCount}</div>
-              <p className="text-sm text-muted-foreground mt-1">In the last 7 days</p>
+              <p className="text-sm text-muted-foreground mt-1">In the last {recentlyPublishedDays} {recentlyPublishedDays === 1 ? 'day' : 'days'}</p>
             </CardContent>
           </Card>
           <Card className="w-full relative">
@@ -809,6 +825,7 @@ const Home = () => {
           onResolveUser={getUserFullName}
           onOpenEntry={handleOpenEntry}
           needsUpdateMonths={needsUpdateMonths}
+          recentlyPublishedDays={recentlyPublishedDays}
         />
 
         {/* <Card>
