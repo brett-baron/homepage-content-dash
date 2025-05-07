@@ -723,10 +723,10 @@ const Home = () => {
               <div className="text-3xl font-bold">{stats.totalPublished}</div>
               <p className="text-sm text-muted-foreground mt-1">
                 {stats.previousMonthPublished === 0 && stats.percentChange === 0
-                ? 'No content published recently'
+                ? 'No new content published recently'
                 : (
                   <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
-                    {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% from last month
+                    {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% {stats.percentChange >= 0 ? 'increase' : 'decrease'} from last month
                   </span>
                 )}
               </p>

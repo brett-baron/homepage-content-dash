@@ -80,41 +80,41 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   // Calculate total published
   const totalPublished = publishedEntries.length;
 
-  // Calculate entries published in current month and previous month
+  // Calculate entries first published in current month and previous month
   const thisMonthPublished = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= currentMonth;
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= currentMonth;
   }).length;
 
-  console.log('This month published:', thisMonthPublished);
+  console.log('This month first published:', thisMonthPublished);
   
   // Log a few sample entries from this month for debugging
   const thisMonthEntries = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= currentMonth;
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= currentMonth;
   }).slice(0, 3);
   
-  console.log('Sample entries published this month:');
+  console.log('Sample entries first published this month:');
   thisMonthEntries.forEach((entry, i) => {
-    console.log(`Entry ${i+1}: Published at ${entry.sys.publishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
+    console.log(`Entry ${i+1}: First published at ${entry.sys.firstPublishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
   });
 
   const previousMonthPublished = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= previousMonth && publishDate < currentMonth;
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= previousMonth && firstPublishDate < currentMonth;
   }).length;
 
-  console.log('Previous month published:', previousMonthPublished);
+  console.log('Previous month first published:', previousMonthPublished);
   
   // Log a few sample entries from previous month for debugging
   const previousMonthEntries = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= previousMonth && publishDate < currentMonth;
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= previousMonth && firstPublishDate < currentMonth;
   }).slice(0, 3);
   
-  console.log('Sample entries published last month:');
+  console.log('Sample entries first published last month:');
   previousMonthEntries.forEach((entry, i) => {
-    console.log(`Entry ${i+1}: Published at ${entry.sys.publishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
+    console.log(`Entry ${i+1}: First published at ${entry.sys.firstPublishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
   });
 
   // Even if previousMonthPublished is 0, if we have content published this month
