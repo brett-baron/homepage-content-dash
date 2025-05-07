@@ -760,19 +760,21 @@ export function ContentTable({
 
       {/* ShadCN UI Dialogs for Archive and Unpublish */}
       <Dialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Archive Entries</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to archive {selectedCount} {selectedCount === 1 ? 'entry' : 'entries'}? 
-              This will move them to the archive and they will no longer be accessible in the content model.
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-4">
+            <DialogTitle className="text-xl">Archive {selectedCount === 1 ? 'Entry' : 'Entries'}</DialogTitle>
+            <DialogDescription className="mt-4 text-sm">
+              {selectedCount === 1 
+                ? "Are you sure you want to archive this entry? It will be moved to the archive and no longer accessible in the content model."
+                : `Are you sure you want to archive ${selectedCount} entries? They will be moved to the archive and no longer accessible in the content model.`}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex sm:justify-end gap-2 mt-5">
             <Button
               variant="outline"
               onClick={() => setIsArchiveDialogOpen(false)}
               disabled={isLoading}
+              className="sm:w-auto"
             >
               Cancel
             </Button>
@@ -780,14 +782,18 @@ export function ContentTable({
               variant="destructive"
               onClick={handleArchiveEntries}
               disabled={isLoading}
+              className="sm:w-auto gap-2"
             >
               {isLoading ? (
                 <>
-                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
-                  Archiving...
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                  <span>Archiving...</span>
                 </>
               ) : (
-                'Archive Entries'
+                <>
+                  <ArchiveIcon size={16} />
+                  <span>Archive {selectedCount === 1 ? 'Entry' : 'Entries'}</span>
+                </>
               )}
             </Button>
           </DialogFooter>
@@ -795,34 +801,40 @@ export function ContentTable({
       </Dialog>
 
       <Dialog open={isUnpublishDialogOpen} onOpenChange={setIsUnpublishDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Unpublish Entries</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to unpublish {selectedCount} {selectedCount === 1 ? 'entry' : 'entries'}? 
-              This will remove them from your published content but keep them as drafts.
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-4">
+            <DialogTitle className="text-xl">Unpublish {selectedCount === 1 ? 'Entry' : 'Entries'}</DialogTitle>
+            <DialogDescription className="mt- text-sm">
+              {selectedCount === 1 
+                ? "Are you sure you want to unpublish this entry? It will be removed from your published content but kept as a draft."
+                : `Are you sure you want to unpublish ${selectedCount} entries? They will be removed from your published content but kept as drafts.`}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex sm:justify-end gap-2 mt-5">
             <Button
               variant="outline"
               onClick={() => setIsUnpublishDialogOpen(false)}
               disabled={isLoading}
+              className="sm:w-auto"
             >
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="default"
               onClick={handleUnpublishEntries}
               disabled={isLoading}
+              className="sm:w-auto gap-2 bg-blue-600 hover:bg-blue-700"
             >
               {isLoading ? (
                 <>
-                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
-                  Unpublishing...
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                  <span>Unpublishing...</span>
                 </>
               ) : (
-                'Unpublish Entries'
+                <>
+                  <RotateCcw size={16} />
+                  <span>Unpublish {selectedCount === 1 ? 'Entry' : 'Entries'}</span>
+                </>
               )}
             </Button>
           </DialogFooter>
