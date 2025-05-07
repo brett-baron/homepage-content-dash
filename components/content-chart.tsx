@@ -67,9 +67,27 @@ export default function ContentChart({
   title,
   description,
 }: ContentChartProps) {
-  const [timeRange, setTimeRange] = useState<TimeRange>('year');
+  // Get the default time range from localStorage if available
+  const getDefaultTimeRange = (): TimeRange => {
+    try {
+      const storedConfig = localStorage.getItem('contentDashboardConfig');
+      if (storedConfig) {
+        const parsedConfig = JSON.parse(storedConfig);
+        if (parsedConfig && parsedConfig.defaultTimeRange && 
+            ['all', 'year', '6months'].includes(parsedConfig.defaultTimeRange)) {
+          return parsedConfig.defaultTimeRange as TimeRange;
+        }
+      }
+    } catch (error) {
+      console.error('Error reading default time range from config:', error);
+    }
+    return 'year'; // Fallback to default
+  };
+
+  const [timeRange, setTimeRange] = useState<TimeRange>(getDefaultTimeRange());
   const [contentType, setContentType] = useState<ContentType>('new');
   const [filteredData, setFilteredData] = useState(data);
+  const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
 
   // Calculate percent changes for each month
   useEffect(() => {
@@ -129,6 +147,33 @@ export default function ContentChart({
     
     console.log(`Filtered ${contentType} data: ${filteredWithPercentage.length} items`);
     setFilteredData(filteredWithPercentage);
+    
+    // Calculate appropriate y-axis range with consistent intervals
+    if (filteredWithPercentage.length > 0) {
+      const maxCount = Math.max(...filteredWithPercentage.map(item => item.count));
+      
+      // Dynamically determine interval size based on the max value
+      let intervalSize;
+      if (maxCount <= 20) {
+        intervalSize = 10;
+      } else if (maxCount <= 50) {
+        intervalSize = 20;
+      } else if (maxCount <= 100) {
+        intervalSize = 25;
+      } else if (maxCount <= 500) {
+        intervalSize = 100;
+      } else {
+        intervalSize = 250;
+      }
+      
+      // Round up to the next multiple of the interval
+      const highestUsedInterval = Math.ceil(maxCount / intervalSize) * intervalSize;
+      // Add one full interval above the highest used interval
+      const upperBound = highestUsedInterval + intervalSize;
+      setYAxisDomain([0, upperBound]);
+    } else {
+      setYAxisDomain([0, 20]);
+    }
   }, [data, updatedData, timeRange, contentType]);
 
   return (
@@ -178,7 +223,12 @@ export default function ContentChart({
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
-            <YAxis tick={{ fontSize: 12 }} tickCount={5} domain={[0, "dataMax + 5"]} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              domain={yAxisDomain}
+              tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
+              allowDecimals={false}
+            />
             <Tooltip 
               content={<CustomTooltip contentType={contentType} />}
               contentStyle={{

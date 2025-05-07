@@ -48,77 +48,40 @@ type ContentfulEntry = EntryProps & {
   };
 };
 
-export const getContentStats = async (entries: CollectionProp<EntryProps>, actions: any[]): Promise<ContentStats> => {
+export const getContentStats = async (
+  entries: CollectionProp<EntryProps>, 
+  actions: any[],
+  recentlyPublishedDays: number = 7,
+  needsUpdateMonths: number = 6
+): Promise<ContentStats> => {
   const now = new Date();
-  console.log('Current date:', now.toISOString());
   
   // Calculate the start of the current and previous months for more accurate monthly comparisons
   const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
   
-  console.log('Current month start:', currentMonth.toISOString());
-  console.log('Previous month start:', previousMonth.toISOString());
-  console.log('Two months ago start:', twoMonthsAgo.toISOString());
-  
-  // For other calculations (7 days, 6 months)
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
-
-  console.log('Processing entries:', entries.items.length);
-  console.log('Sample entry sys:', entries.items[0]?.sys);
+  // For other calculations (configured days, needs update months)
+  const recentlyPublishedDate = new Date(now.getTime() - recentlyPublishedDays * 24 * 60 * 60 * 1000);
+  const needsUpdateDate = new Date(now.getTime() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000);
 
   // Get published entries
-  const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
-    console.log('Entry publish date:', entry.sys.publishedAt);
-    return entry.sys.publishedAt;
-  });
-
-  console.log('Published entries:', publishedEntries.length);
+  const publishedEntries = entries.items.filter((entry: ContentfulEntry) => entry.sys.publishedAt);
 
   // Calculate total published
   const totalPublished = publishedEntries.length;
 
-  // Calculate entries published in current month and previous month
+  // Calculate entries first published in current month and previous month
   const thisMonthPublished = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= currentMonth;
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= currentMonth;
   }).length;
-
-  console.log('This month published:', thisMonthPublished);
-  
-  // Log a few sample entries from this month for debugging
-  const thisMonthEntries = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= currentMonth;
-  }).slice(0, 3);
-  
-  console.log('Sample entries published this month:');
-  thisMonthEntries.forEach((entry, i) => {
-    console.log(`Entry ${i+1}: Published at ${entry.sys.publishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
-  });
 
   const previousMonthPublished = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= previousMonth && publishDate < currentMonth;
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= previousMonth && firstPublishDate < currentMonth;
   }).length;
 
-  console.log('Previous month published:', previousMonthPublished);
-  
-  // Log a few sample entries from previous month for debugging
-  const previousMonthEntries = publishedEntries.filter((entry: ContentfulEntry) => {
-    const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= previousMonth && publishDate < currentMonth;
-  }).slice(0, 3);
-  
-  console.log('Sample entries published last month:');
-  previousMonthEntries.forEach((entry, i) => {
-    console.log(`Entry ${i+1}: Published at ${entry.sys.publishedAt}, Title: ${entry.fields?.title?.['en-US'] || 'Untitled'}`);
-  });
-
-  // Even if previousMonthPublished is 0, if we have content published this month
-  // we should still show a percentage increase
+  // Calculate percent change
   let percentChange = 0;
   if (previousMonthPublished > 0) {
     percentChange = ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
@@ -126,28 +89,17 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
     percentChange = 100; // If nothing published last month but we have content this month, show 100% increase
   }
 
-  // Get scheduled count - including both individual entries and entries in releases
-  console.log('Processing scheduled actions:', actions?.length);
-  console.log('Sample action:', actions?.[0]);
-
   // Track unique entry IDs that are scheduled
   const scheduledEntryIds = new Set<string>();
 
   actions?.forEach((action: ScheduledAction) => {
-    // Only process actions that:
-    // 1. Have status 'scheduled'
-    // 2. Are scheduled for the future
-    // 3. Are publish actions
     if (action.sys.status === 'scheduled' && 
         new Date(action.scheduledFor.datetime) > now &&
         action.action === 'publish') {
       
       if (action.entity.sys.linkType === 'Entry') {
-        // Individual scheduled entry
         scheduledEntryIds.add(action.entity.sys.id);
       } else if (action.entity.sys.linkType === 'Release') {
-        // For releases, we need to add all entries that are part of the release
-        // The entries should be available in the release entities
         const releaseEntities = action.release?.entities?.items || [];
         releaseEntities.forEach((entity: any) => {
           if (entity.sys?.id) {
@@ -159,23 +111,18 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   });
 
   const scheduledCount = scheduledEntryIds.size;
-  console.log('Total scheduled entries:', scheduledCount);
 
-  // Get recently published count (last 7 days)
+  // Get recently published count (based on configured days)
   const recentlyPublishedCount = publishedEntries.filter((entry: ContentfulEntry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate >= sevenDaysAgo;
+    return publishDate >= recentlyPublishedDate;
   }).length;
 
-  console.log('Recently published count:', recentlyPublishedCount);
-
-  // Get needs update count (published more than 6 months ago)
+  // Get needs update count (published more than configured months ago)
   const needsUpdateCount = publishedEntries.filter((entry: ContentfulEntry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
-    return publishDate <= sixMonthsAgo;
+    return publishDate <= needsUpdateDate;
   }).length;
-
-  console.log('Needs update count:', needsUpdateCount);
 
   return {
     totalPublished,
@@ -187,25 +134,170 @@ export const getContentStats = async (entries: CollectionProp<EntryProps>, actio
   };
 };
 
+// Optimized function to get content stats using separate API calls with filters
+// This is more scalable for spaces with millions of entries
+export const getContentStatsPaginated = async (
+  cma: any,
+  spaceId: string,
+  environmentId: string,
+  actions: any[],
+  recentlyPublishedDays: number = 7,
+  needsUpdateMonths: number = 6,
+  excludedContentTypes: string[] = []
+): Promise<ContentStats> => {
+  const now = new Date();
+  
+  // Calculate the start of the current and previous months
+  const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  
+  // Calculate dates for filters
+  const recentlyPublishedDate = new Date(now.getTime() - recentlyPublishedDays * 24 * 60 * 60 * 1000);
+  const needsUpdateDate = new Date(now.getTime() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000);
+
+  // Build content type exclusion string for queries if any types are excluded
+  let contentTypeExclusion = '';
+  if (excludedContentTypes.length > 0) {
+    contentTypeExclusion = `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`;
+  }
+
+  // 1. Get total published count
+  const totalPublishedResponse = await cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: {
+      'sys.publishedAt[exists]': true,
+      limit: 1 // We only need the total
+    }
+  });
+  const totalPublished = totalPublishedResponse.total;
+
+  // 2. Get current month published count
+  const currentMonthQuery = {
+    'sys.firstPublishedAt[gte]': currentMonth.toISOString(),
+    'sys.publishedAt[exists]': true,
+    limit: 1
+  };
+  
+  const currentMonthResponse = await cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: currentMonthQuery
+  });
+  const thisMonthPublished = currentMonthResponse.total;
+
+  // 3. Get previous month published count
+  const previousMonthQuery = {
+    'sys.firstPublishedAt[gte]': previousMonth.toISOString(),
+    'sys.firstPublishedAt[lt]': currentMonth.toISOString(),
+    'sys.publishedAt[exists]': true,
+    limit: 1
+  };
+  
+  const previousMonthResponse = await cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: previousMonthQuery
+  });
+  const previousMonthPublished = previousMonthResponse.total;
+
+  // Calculate percent change
+  let percentChange = 0;
+  if (previousMonthPublished > 0) {
+    percentChange = ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
+  } else if (thisMonthPublished > 0) {
+    percentChange = 100;
+  }
+
+  // 4. Get recently published count
+  const recentlyPublishedQuery = {
+    'sys.publishedAt[gte]': recentlyPublishedDate.toISOString(),
+    limit: 1
+  };
+  
+  const recentlyPublishedResponse = await cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: recentlyPublishedQuery
+  });
+  const recentlyPublishedCount = recentlyPublishedResponse.total;
+
+  // 5. Get needs update count
+  const needsUpdateQuery = {
+    'sys.publishedAt[lte]': needsUpdateDate.toISOString(),
+    'sys.updatedAt[lte]': needsUpdateDate.toISOString(),
+    limit: 1
+  };
+  
+  const needsUpdateResponse = await cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: needsUpdateQuery
+  });
+  const needsUpdateCount = needsUpdateResponse.total;
+
+  // 6. Calculate scheduled count from actions
+  const scheduledEntryIds = new Set<string>();
+  
+  actions?.forEach((action: ScheduledAction) => {
+    if (action.sys.status === 'scheduled' && 
+        new Date(action.scheduledFor.datetime) > now &&
+        action.action === 'publish') {
+      
+      if (action.entity.sys.linkType === 'Entry') {
+        scheduledEntryIds.add(action.entity.sys.id);
+      } else if (action.entity.sys.linkType === 'Release') {
+        const releaseEntities = action.release?.entities?.items || [];
+        releaseEntities.forEach((entity: any) => {
+          if (entity.sys?.id) {
+            scheduledEntryIds.add(entity.sys.id);
+          }
+        });
+      }
+    }
+  });
+
+  const scheduledCount = scheduledEntryIds.size;
+
+  return {
+    totalPublished,
+    percentChange,
+    scheduledCount,
+    recentlyPublishedCount,
+    needsUpdateCount,
+    previousMonthPublished,
+  };
+};
+
+// Fetch limited page of entries that match specific criteria
+export const fetchEntriesByType = async (
+  cma: any,
+  spaceId: string,
+  environmentId: string,
+  query: object,
+  limit: number = 100,
+  page: number = 1
+): Promise<CollectionProp<EntryProps>> => {
+  const skip = (page - 1) * limit;
+  
+  return cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: {
+      ...query,
+      skip,
+      limit
+    }
+  });
+};
+
 // Generate chart data showing first published dates (new content)
 export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number; percentChange?: number }> => {
   // Get published entries
   const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
     return entry.sys.firstPublishedAt;
   });
-
-  console.log(`Found ${publishedEntries.length} published entries for chart data`);
   
-  // Log the first few publish dates to verify the data
-  const sampleEntries = publishedEntries.slice(0, 5);
-  console.log('Sample publish dates (first 5):');
-  sampleEntries.forEach((entry: ContentfulEntry, index) => {
-    console.log(`  ${index + 1}. Raw: ${entry.sys.firstPublishedAt}`);
-    const date = new Date(entry.sys.firstPublishedAt!);
-    console.log(`     Parsed: ${date.toISOString()}`);
-    console.log(`     Year: ${date.getFullYear()}, Month: ${date.getMonth() + 1}`);
-  });
-
   // Group entries by month
   const entriesByMonth: Record<string, number> = {};
   
@@ -228,32 +320,20 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
     }
   });
 
-  // Log month groupings
-  console.log('Entries grouped by month:');
-  Object.entries(entriesByMonth)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .forEach(([month, count]) => {
-      console.log(`  ${month}: ${count} entries`);
-    });
-
   // Make sure we have a date range to work with
   const now = new Date();
   // June 11, 2024 is known to be the oldest content publish date
   const minDate = new Date(2024, 5, 1); // June 1, 2024 (zero-indexed month)
   
-  console.log(`Minimum date for chart: ${minDate.toISOString()} (June 1, 2024)`);
-  
   // Convert the oldest publish date to a Date object
   let oldestDate: Date | null = null;
   if (oldestPublishDate) {
     oldestDate = new Date(oldestPublishDate);
-    console.log(`Oldest content publish date detected: ${oldestDate.toISOString()}`);
     
     // Use the earlier of our known min date or the actual oldest date
     if (oldestDate < minDate) {
       minDate.setTime(oldestDate.getTime());
       minDate.setDate(1); // Set to first of the month
-      console.log(`Using detected oldest date for chart: ${minDate.toISOString()}`);
     }
   }
   
@@ -296,14 +376,84 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
   return monthsWithPercentChange;
 };
 
+// Fetch chart data directly from the API with filters
+export const fetchChartData = async (
+  cma: any,
+  spaceId: string,
+  environmentId: string,
+  excludedContentTypes: string[] = []
+): Promise<Array<{ date: string; count: number; percentChange?: number }>> => {
+  const now = new Date();
+  const startDate = new Date(2024, 5, 1); // June 1, 2024 as default start
+  
+  // Create array of all months from start date to current date
+  const months: Array<{ date: string; count: number }> = [];
+  const currentDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  let monthDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  
+  // Build content type exclusion for queries
+  let contentTypeParams = '';
+  if (excludedContentTypes.length > 0) {
+    contentTypeParams = `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`;
+  }
+  
+  // Fetch counts for each month in parallel
+  const monthPromises = [];
+  
+  while (monthDate <= currentDate) {
+    const nextMonth = new Date(monthDate);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-01`;
+    
+    const promise = cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.firstPublishedAt[gte]': monthDate.toISOString(),
+        'sys.firstPublishedAt[lt]': nextMonth.toISOString(),
+        limit: 1
+      }
+    }).then((response: { total: number }) => ({
+      date: monthKey,
+      count: response.total
+    }));
+    
+    monthPromises.push(promise);
+    
+    // Advance to next month
+    monthDate.setMonth(monthDate.getMonth() + 1);
+  }
+  
+  const monthResults = await Promise.all(monthPromises);
+  
+  // Calculate month-over-month percent changes
+  const monthsWithPercentChange = monthResults.map((month, index, array) => {
+    if (index === 0) {
+      return { ...month, percentChange: 0 };
+    }
+    
+    const prevCount = array[index - 1].count;
+    let percentChange = 0;
+    
+    if (prevCount > 0) {
+      percentChange = ((month.count - prevCount) / prevCount) * 100;
+    } else if (month.count > 0) {
+      percentChange = 100;
+    }
+    
+    return { ...month, percentChange };
+  });
+  
+  return monthsWithPercentChange;
+};
+
 // Generate chart data showing updated dates (any content updates)
 export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): Array<{ date: string; count: number; percentChange?: number }> => {
   // Get published entries
   const publishedEntries = entries.items.filter((entry: ContentfulEntry) => {
     return entry.sys.updatedAt;
   });
-
-  console.log(`Found ${publishedEntries.length} updated entries for chart data`);
   
   // Group entries by month
   const entriesByMonth: Record<string, number> = {};
@@ -332,19 +482,15 @@ export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): A
   // June 11, 2024 is known to be the oldest content update date
   const minDate = new Date(2024, 5, 1); // June 1, 2024 (zero-indexed month)
   
-  console.log(`Minimum date for chart: ${minDate.toISOString()} (June 1, 2024)`);
-  
   // Convert the oldest update date to a Date object
   let oldestDate: Date | null = null;
   if (oldestUpdateDate) {
     oldestDate = new Date(oldestUpdateDate);
-    console.log(`Oldest content update date detected: ${oldestDate.toISOString()}`);
     
     // Use the earlier of our known min date or the actual oldest date
     if (oldestDate < minDate) {
       minDate.setTime(oldestDate.getTime());
       minDate.setDate(1); // Set to first of the month
-      console.log(`Using detected oldest date for chart: ${minDate.toISOString()}`);
     }
   }
   

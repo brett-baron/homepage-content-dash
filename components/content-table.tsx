@@ -8,10 +8,10 @@ import {
   FormControl, 
   Select,
   Modal,
-  Button,
+  Button as ContentfulButton,
   Card,
   Badge,
-  Table,
+  Table as ContentfulTable,
   IconButton,
   Menu,
   Text,
@@ -22,7 +22,19 @@ import {
 } from '@contentful/f36-components';
 import { MoreHorizontalIcon } from '@contentful/f36-icons';
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArchiveIcon, RotateCcw } from "lucide-react";
 
 interface ContentItem {
   id: string
@@ -59,6 +71,9 @@ interface ContentTableProps {
   onCancel?: (releaseId: string) => Promise<void>
   onEntryClick?: (entryId: string) => void
   hideActions?: boolean
+  isOrphanedContent?: boolean
+  onArchiveEntries?: (entryIds: string[]) => Promise<void>
+  onUnpublishEntries?: (entryIds: string[]) => Promise<void>
 }
 
 const formatDateTime = (dateTimeStr: string) => {
@@ -90,7 +105,10 @@ export function ContentTable({
   onReschedule,
   onCancel,
   onEntryClick,
-  hideActions = false
+  hideActions = false,
+  isOrphanedContent = false,
+  onArchiveEntries,
+  onUnpublishEntries
 }: ContentTableProps) {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -101,6 +119,12 @@ export function ContentTable({
   const [selectedTime, setSelectedTime] = useState("12:00 PM");
   const [selectedTimezone, setSelectedTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // New states for selection
+  const [selectedRows, setSelectedRows] = useState<{[key: string]: boolean}>({});
+  const [selectAll, setSelectAll] = useState(false);
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+  const [isUnpublishDialogOpen, setIsUnpublishDialogOpen] = useState(false);
 
   // Check if the data is ScheduledRelease[]
   const isScheduledReleaseData = data.length > 0 && 'scheduledDateTime' in data[0];
@@ -118,6 +142,105 @@ export function ContentTable({
                new Date((b as ScheduledRelease).scheduledDateTime).getTime();
       }) 
     : data; // Use data as-is (already sorted by ContentEntryTabs)
+
+  // Reset selection when data changes
+  useEffect(() => {
+    setSelectedRows({});
+    setSelectAll(false);
+  }, [data]);
+
+  // Calculate number of selected rows
+  const selectedCount = useMemo(() => {
+    return Object.values(selectedRows).filter(Boolean).length;
+  }, [selectedRows]);
+
+  // Handle "Select All" checkbox
+  const handleSelectAll = (checked: boolean) => {
+    setSelectAll(checked);
+    
+    // Only select non-showMoreRow items
+    const newSelectedRows: {[key: string]: boolean} = {};
+    sortedData.forEach(item => {
+      if (!item.isShowMoreRow) {
+        newSelectedRows[item.id] = checked;
+      }
+    });
+    
+    setSelectedRows(newSelectedRows);
+  };
+
+  // Handle individual row selection
+  const handleSelectRow = (id: string, checked: boolean) => {
+    setSelectedRows(prev => ({
+      ...prev,
+      [id]: checked
+    }));
+    
+    // Update selectAll state based on selection
+    const actualItems = sortedData.filter(item => !item.isShowMoreRow);
+    const newSelectedRows = {
+      ...selectedRows,
+      [id]: checked
+    };
+    
+    // Check if all actual items are now selected
+    const allSelected = actualItems.every(item => 
+      newSelectedRows[item.id] === true
+    );
+    
+    setSelectAll(allSelected);
+  };
+
+  // Get array of selected entry IDs
+  const getSelectedEntryIds = (): string[] => {
+    return Object.entries(selectedRows)
+      .filter(([_, isSelected]) => isSelected)
+      .map(([id]) => id);
+  };
+
+  // Archive selected entries
+  const handleArchiveEntries = async () => {
+    const entryIds = getSelectedEntryIds();
+    if (entryIds.length === 0) return;
+    
+    setIsLoading(true);
+    try {
+      if (onArchiveEntries) {
+        await onArchiveEntries(entryIds);
+      }
+      // Reset selection after successful operation
+      setSelectedRows({});
+      setSelectAll(false);
+    } catch (error) {
+      console.error('Error archiving entries:', error);
+      sdk.notifier.error('Failed to archive selected entries. Please try again.');
+    } finally {
+      setIsLoading(false);
+      setIsArchiveDialogOpen(false);
+    }
+  };
+
+  // Unpublish selected entries
+  const handleUnpublishEntries = async () => {
+    const entryIds = getSelectedEntryIds();
+    if (entryIds.length === 0) return;
+    
+    setIsLoading(true);
+    try {
+      if (onUnpublishEntries) {
+        await onUnpublishEntries(entryIds);
+      }
+      // Reset selection after successful operation
+      setSelectedRows({});
+      setSelectAll(false);
+    } catch (error) {
+      console.error('Error unpublishing entries:', error);
+      sdk.notifier.error('Failed to unpublish selected entries. Please try again.');
+    } finally {
+      setIsLoading(false);
+      setIsUnpublishDialogOpen(false);
+    }
+  };
 
   const handleViewRelease = (release: ScheduledRelease) => {
     const baseUrl = 'https://launch.contentful.com';
@@ -260,138 +383,238 @@ export function ContentTable({
             </Flex>
           </Box>
         )}
+
+        {/* Action Buttons for Orphaned Content */}
+        {isOrphanedContent && (
+          <Box padding="spacingS" paddingBottom="spacingM">
+            <Flex justifyContent="space-between" alignItems="center">
+              <Text className="text-sm">
+                {selectedCount} of {sortedData.filter(item => !item.isShowMoreRow).length} entries selected
+              </Text>
+              <Flex gap="spacingS">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  disabled={selectedCount === 0 || isLoading}
+                  onClick={() => setIsUnpublishDialogOpen(true)}
+                  className="opacity-90 hover:opacity-100 transition-opacity"
+                >
+                  <RotateCcw size={16} className="mr-1" />
+                  Unpublish Selected
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  disabled={selectedCount === 0 || isLoading}
+                  onClick={() => setIsArchiveDialogOpen(true)}
+                  className="opacity-90 hover:opacity-100 transition-opacity"
+                >
+                  <ArchiveIcon size={16} className="mr-1" />
+                  Archive Selected
+                </Button>
+              </Flex>
+            </Flex>
+          </Box>
+        )}
+
         <Table>
-          <Table.Head>
-            <Table.Row>
-              <Table.Cell>Title</Table.Cell>
+          <TableHeader>
+            <TableRow>
+              {isOrphanedContent && (
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={selectAll}
+                    onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                    aria-label="Select all rows"
+                  />
+                </TableHead>
+              )}
+              <TableHead>Title</TableHead>
               {isScheduledReleaseData ? (
                 <>
-                  <Table.Cell>Scheduled Date & Time</Table.Cell>
-                  <Table.Cell>Status</Table.Cell>
-                  {showItemCount && <Table.Cell>Items</Table.Cell>}
-                  {showUpdatedAt && <Table.Cell>Last Updated</Table.Cell>}
-                  {showUpdatedBy && <Table.Cell>Last Updated By</Table.Cell>}
+                  <TableHead>Scheduled Date & Time</TableHead>
+                  <TableHead>Status</TableHead>
+                  {showItemCount && <TableHead>Items</TableHead>}
+                  {showUpdatedAt && <TableHead>Last Updated</TableHead>}
+                  {showUpdatedBy && <TableHead>Last Updated By</TableHead>}
                 </>
               ) : (
                 <>
-                  <Table.Cell>Author</Table.Cell>
-                  {showStage && <Table.Cell>Stage</Table.Cell>}
-                  <Table.Cell>Content Type</Table.Cell>
-                  <Table.Cell>Published Date</Table.Cell>
+                  <TableHead>Author</TableHead>
+                  {showStage && <TableHead>Stage</TableHead>}
+                  <TableHead>Content Type</TableHead>
+                  <TableHead>Published Date</TableHead>
                 </>
               )}
-              {!hideActions && <Table.Cell></Table.Cell>}
-            </Table.Row>
-          </Table.Head>
-          <Table.Body>
-            {sortedData.map((item) => (
-              <Table.Row 
-                key={item.id}
-                className={item.isShowMoreRow ? 'hover:bg-transparent border-0' : undefined}
-              >
-                <Table.Cell colSpan={item.isShowMoreRow ? (isScheduledReleaseData ? 6 : 5) : undefined}>
-                  {item.isShowMoreRow ? (
-                    item.title
+              {!hideActions && <TableHead></TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedData.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={isOrphanedContent ? 6 : 5} className="h-24 text-center">
+                  {isOrphanedContent ? (
+                    <div className="flex flex-col items-center space-y-2">
+                      <p className="font-medium">No orphaned entries found</p>
+                      <p className="text-sm text-muted-foreground">All your content is properly referenced by other entries.</p>
+                    </div>
                   ) : (
-                    <Link 
-                      href="#" 
-                      className="hover:underline"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (onEntryClick && !isScheduledReleaseData) {
-                          onEntryClick(item.id);
-                        } else if (isScheduledReleaseData) {
-                          handleViewRelease(item as ScheduledRelease);
-                        }
-                      }}
-                    >
-                      {item.title}
-                    </Link>
+                    "No entries found."
                   )}
-                </Table.Cell>
-                {!item.isShowMoreRow && (
-                  isScheduledReleaseData ? (
-                    <>
-                      <Table.Cell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</Table.Cell>
-                      <Table.Cell>
-                        <Badge variant="primary">{item.status}</Badge>
-                      </Table.Cell>
-                      {showItemCount && (
-                        <Table.Cell>{(item as ScheduledRelease).itemCount} items</Table.Cell>
-                      )}
-                      {showUpdatedAt && (
-                        <Table.Cell>{formatDateTime((item as ScheduledRelease).updatedAt)}</Table.Cell>
-                      )}
-                      {showUpdatedBy && (
-                        <Table.Cell>{(item as ScheduledRelease).updatedBy}</Table.Cell>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <Table.Cell>{(item as ContentItem).author}</Table.Cell>
-                      {showStage && (
-                        <Table.Cell>
-                          <Badge
-                            variant={
-                              (item as ContentItem).stage === "Published"
-                                ? "positive"
-                                : (item as ContentItem).stage === "Needs Update"
-                                  ? "negative"
-                                  : (item as ContentItem).stage === "Ready to Publish" ||
-                                      (item as ContentItem).stage === "Scheduled" ||
-                                      (item as ContentItem).stage === "Ready to Launch"
-                                    ? "primary"
-                                    : "secondary"
-                            }
-                          >
-                            {(item as ContentItem).stage}
-                          </Badge>
-                        </Table.Cell>
-                      )}
-                      <Table.Cell>{(item as ContentItem).workflow}</Table.Cell>
-                      <Table.Cell>{formatDate((item as ContentItem).date)}</Table.Cell>
-                    </>
-                  )
-                )}
-                {!hideActions && !item.isShowMoreRow && (
-                  <Table.Cell>
-                    <Menu>
-                      <Menu.Trigger>
-                        <IconButton
-                          variant="transparent"
-                          icon={<MoreHorizontalIcon />}
-                          aria-label="Actions"
-                          isDisabled={isLoading}
-                        />
-                      </Menu.Trigger>
-                      {isScheduledReleaseData ? (
-                        <Menu.List>
-                          <Menu.Item onClick={() => handleViewRelease(item as ScheduledRelease)}>
-                            View
-                          </Menu.Item>
-                          <Menu.Item onClick={() => handleRescheduleRelease(item as ScheduledRelease)}>
-                            Reschedule
-                          </Menu.Item>
-                          <Menu.Item 
-                            onClick={() => handleCancelRelease(item as ScheduledRelease)}
-                          >
-                            Cancel Release
-                          </Menu.Item>
-                        </Menu.List>
-                      ) : (
-                        <Menu.List>
-                          <Menu.Item>Edit</Menu.Item>
-                        </Menu.List>
-                      )}
-                    </Menu>
-                  </Table.Cell>
-                )}
-              </Table.Row>
-            ))}
-          </Table.Body>
+                </TableCell>
+              </TableRow>
+            ) : (
+              sortedData.map((item) => (
+                <TableRow 
+                  key={item.id}
+                  className={item.isShowMoreRow ? 'hover:bg-transparent border-0' : undefined}
+                  data-state={selectedRows[item.id] ? "selected" : undefined}
+                >
+                  {isOrphanedContent && !item.isShowMoreRow && (
+                    <TableCell className="w-12">
+                      <Checkbox
+                        checked={!!selectedRows[item.id]}
+                        onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
+                        aria-label={`Select ${item.title}`}
+                      />
+                    </TableCell>
+                  )}
+                  {isOrphanedContent && item.isShowMoreRow && (
+                    <TableCell />
+                  )}
+                  <TableCell colSpan={item.isShowMoreRow ? (isScheduledReleaseData ? 6 : 5) : undefined}>
+                    {item.isShowMoreRow ? (
+                      item.title
+                    ) : (
+                      <Link 
+                        href="#" 
+                        className="hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (onEntryClick && !isScheduledReleaseData) {
+                            onEntryClick(item.id);
+                          } else if (isScheduledReleaseData) {
+                            handleViewRelease(item as ScheduledRelease);
+                          }
+                        }}
+                      >
+                        {item.title}
+                      </Link>
+                    )}
+                  </TableCell>
+                  {!item.isShowMoreRow && (
+                    isScheduledReleaseData ? (
+                      <>
+                        <TableCell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</TableCell>
+                        <TableCell>
+                          <Badge variant="primary">{item.status}</Badge>
+                        </TableCell>
+                        {showItemCount && (
+                          <TableCell>{(item as ScheduledRelease).itemCount} items</TableCell>
+                        )}
+                        {showUpdatedAt && (
+                          <TableCell>{formatDateTime((item as ScheduledRelease).updatedAt)}</TableCell>
+                        )}
+                        {showUpdatedBy && (
+                          <TableCell>{(item as ScheduledRelease).updatedBy}</TableCell>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <TableCell>{(item as ContentItem).author}</TableCell>
+                        {showStage && (
+                          <TableCell>
+                            <Badge
+                              variant={
+                                (item as ContentItem).stage === "Published"
+                                  ? "positive"
+                                  : (item as ContentItem).stage === "Needs Update"
+                                    ? "negative"
+                                    : (item as ContentItem).stage === "Ready to Publish" ||
+                                        (item as ContentItem).stage === "Scheduled" ||
+                                        (item as ContentItem).stage === "Ready to Launch"
+                                      ? "primary"
+                                      : "secondary"
+                              }
+                            >
+                              {(item as ContentItem).stage}
+                            </Badge>
+                          </TableCell>
+                        )}
+                        <TableCell>{(item as ContentItem).workflow}</TableCell>
+                        <TableCell>{formatDate((item as ContentItem).date)}</TableCell>
+                      </>
+                    )
+                  )}
+                  {!hideActions && !item.isShowMoreRow && (
+                    <TableCell>
+                      <Menu>
+                        <Menu.Trigger>
+                          <IconButton
+                            variant="transparent"
+                            icon={<MoreHorizontalIcon />}
+                            aria-label="Actions"
+                            isDisabled={isLoading}
+                          />
+                        </Menu.Trigger>
+                        {isScheduledReleaseData ? (
+                          <Menu.List>
+                            <Menu.Item onClick={() => handleViewRelease(item as ScheduledRelease)}>
+                              View
+                            </Menu.Item>
+                            <Menu.Item onClick={() => handleRescheduleRelease(item as ScheduledRelease)}>
+                              Reschedule
+                            </Menu.Item>
+                            <Menu.Item 
+                              onClick={() => handleCancelRelease(item as ScheduledRelease)}
+                            >
+                              Cancel Release
+                            </Menu.Item>
+                          </Menu.List>
+                        ) : (
+                          <Menu.List>
+                            <Menu.Item onClick={() => onEntryClick && onEntryClick(item.id)}>Edit</Menu.Item>
+                            {isOrphanedContent && (
+                              <>
+                                <Menu.Item 
+                                  onClick={() => {
+                                    setSelectedRows({[item.id]: true});
+                                    setIsUnpublishDialogOpen(true);
+                                  }}
+                                  isDisabled={isLoading}
+                                >
+                                  <Flex alignItems="center" gap="spacingXs">
+                                    <RotateCcw size={14} />
+                                    <span>Unpublish</span>
+                                  </Flex>
+                                </Menu.Item>
+                                <Menu.Item 
+                                  onClick={() => {
+                                    setSelectedRows({[item.id]: true});
+                                    setIsArchiveDialogOpen(true);
+                                  }}
+                                  isDisabled={isLoading}
+                                >
+                                  <Flex alignItems="center" gap="spacingXs">
+                                    <ArchiveIcon size={14} />
+                                    <span>Archive</span>
+                                  </Flex>
+                                </Menu.Item>
+                              </>
+                            )}
+                          </Menu.List>
+                        )}
+                      </Menu>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
         </Table>
       </Card>
 
+      {/* Contentful Modals */}
       <Modal
         isShown={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
@@ -408,21 +631,21 @@ export function ContentTable({
               </Text>
             </Modal.Content>
             <Modal.Controls>
-              <Button
+              <ContentfulButton
                 variant="secondary"
                 onClick={() => setIsCancelModalOpen(false)}
                 isDisabled={isLoading}
               >
                 No, keep release
-              </Button>
-              <Button
+              </ContentfulButton>
+              <ContentfulButton
                 variant="negative"
                 onClick={handleCancelConfirm}
                 isDisabled={isLoading}
                 isLoading={isLoading}
               >
                 Yes, cancel release
-              </Button>
+              </ContentfulButton>
             </Modal.Controls>
           </Box>
         )}
@@ -515,25 +738,108 @@ export function ContentTable({
               </Flex>
             </Modal.Content>
             <Modal.Controls>
-              <Button
+              <ContentfulButton
                 variant="secondary"
                 onClick={() => setIsRescheduleModalOpen(false)}
                 isDisabled={isLoading}
               >
                 Cancel
-              </Button>
-              <Button
+              </ContentfulButton>
+              <ContentfulButton
                 variant="primary"
                 onClick={handleRescheduleConfirm}
                 isDisabled={isLoading || !selectedDate}
                 isLoading={isLoading}
               >
                 Save Changes
-              </Button>
+              </ContentfulButton>
             </Modal.Controls>
           </Box>
         )}
       </Modal>
+
+      {/* ShadCN UI Dialogs for Archive and Unpublish */}
+      <Dialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-4">
+            <DialogTitle className="text-xl">Archive {selectedCount === 1 ? 'Entry' : 'Entries'}</DialogTitle>
+            <DialogDescription className="mt-4 text-sm">
+              {selectedCount === 1 
+                ? "Are you sure you want to archive this entry? It will be moved to the archive and no longer accessible in the content model."
+                : `Are you sure you want to archive ${selectedCount} entries? They will be moved to the archive and no longer accessible in the content model.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex sm:justify-end gap-2 mt-5">
+            <Button
+              variant="outline"
+              onClick={() => setIsArchiveDialogOpen(false)}
+              disabled={isLoading}
+              className="sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleArchiveEntries}
+              disabled={isLoading}
+              className="sm:w-auto gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                  <span>Archiving...</span>
+                </>
+              ) : (
+                <>
+                  <ArchiveIcon size={16} />
+                  <span>Archive {selectedCount === 1 ? 'Entry' : 'Entries'}</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isUnpublishDialogOpen} onOpenChange={setIsUnpublishDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-4">
+            <DialogTitle className="text-xl">Unpublish {selectedCount === 1 ? 'Entry' : 'Entries'}</DialogTitle>
+            <DialogDescription className="mt- text-sm">
+              {selectedCount === 1 
+                ? "Are you sure you want to unpublish this entry? It will be removed from your published content but kept as a draft."
+                : `Are you sure you want to unpublish ${selectedCount} entries? They will be removed from your published content but kept as drafts.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex sm:justify-end gap-2 mt-5">
+            <Button
+              variant="outline"
+              onClick={() => setIsUnpublishDialogOpen(false)}
+              disabled={isLoading}
+              className="sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={handleUnpublishEntries}
+              disabled={isLoading}
+              className="sm:w-auto gap-2 bg-blue-600 hover:bg-blue-700"
+            >
+              {isLoading ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                  <span>Unpublishing...</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw size={16} />
+                  <span>Unpublish {selectedCount === 1 ? 'Entry' : 'Entries'}</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
