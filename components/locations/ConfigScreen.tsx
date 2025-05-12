@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { ConfigAppSDK } from '@contentful/app-sdk';
-import { Heading, Form, Paragraph, Flex, FormControl, Note, Spinner, Select } from '@contentful/f36-components';
+import { Heading, Form, Paragraph, Flex, FormControl, Note, Spinner, Select, Switch } from '@contentful/f36-components';
 import { Multiselect } from '@contentful/f36-multiselect';
 import { css } from 'emotion';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
@@ -10,6 +10,7 @@ export interface AppInstallationParameters {
   needsUpdateMonths?: number;
   defaultTimeRange?: 'all' | 'year' | '6months';
   recentlyPublishedDays?: number;
+  showUpcomingReleases?: boolean;
 }
 
 const ConfigScreen = () => {
@@ -17,7 +18,8 @@ const ConfigScreen = () => {
     excludedContentTypes: [],
     needsUpdateMonths: 6,
     defaultTimeRange: 'year',
-    recentlyPublishedDays: 7
+    recentlyPublishedDays: 7,
+    showUpcomingReleases: true
   });
   const [contentTypes, setContentTypes] = useState<Array<{ id: string; name: string }>>([]);
   const [filteredContentTypes, setFilteredContentTypes] = useState<Array<{ id: string; name: string }>>([]);
@@ -111,6 +113,11 @@ const ConfigScreen = () => {
                 parsedConfig.recentlyPublishedDays = 7; // Default to 7 days
               }
               
+              // Ensure default showUpcomingReleases if not set
+              if (parsedConfig.showUpcomingReleases === undefined) {
+                parsedConfig.showUpcomingReleases = true;
+              }
+              
               setParameters(parsedConfig);
               console.log('Loaded and filtered configuration from localStorage:', parsedConfig);
               setIsLoading(false);
@@ -141,6 +148,11 @@ const ConfigScreen = () => {
             currentParameters.recentlyPublishedDays = 7;
           }
           
+          // Ensure default showUpcomingReleases if not set
+          if (currentParameters.showUpcomingReleases === undefined) {
+            currentParameters.showUpcomingReleases = true;
+          }
+          
           setParameters(currentParameters);
         } else {
           // Initialize with defaults if no parameters exist
@@ -148,7 +160,8 @@ const ConfigScreen = () => {
             excludedContentTypes: [],
             needsUpdateMonths: 6,
             defaultTimeRange: 'year',
-            recentlyPublishedDays: 7
+            recentlyPublishedDays: 7,
+            showUpcomingReleases: true
           });
         }
       } catch (error) {
@@ -226,6 +239,16 @@ const ConfigScreen = () => {
     }));
   };
 
+  const handleShowUpcomingReleasesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    console.log(`Show upcoming releases changed to: ${checked}`);
+    
+    setParameters(prev => ({
+      ...prev,
+      showUpcomingReleases: checked
+    }));
+  };
+
   return (
     <Flex flexDirection="column" className={css({ margin: '40px', maxWidth: '800px' })}>
       <Form>
@@ -292,6 +315,20 @@ const ConfigScreen = () => {
               </Select>
               <FormControl.HelpText>
                 Content will be considered "Recently Published" if it was published within this time period.
+              </FormControl.HelpText>
+            </FormControl>
+
+            <FormControl marginBottom="spacingL">
+              <Switch
+                id="show-upcoming-releases"
+                name="show-upcoming-releases"
+                isChecked={parameters.showUpcomingReleases}
+                onChange={handleShowUpcomingReleasesChange}
+              >
+                Show Upcoming Releases Section
+              </Switch>
+              <FormControl.HelpText>
+                Toggle visibility of the upcoming releases section on the dashboard.
               </FormControl.HelpText>
             </FormControl>
 
