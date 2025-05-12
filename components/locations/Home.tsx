@@ -276,6 +276,7 @@ const Home = () => {
   const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
   const [needsUpdateMonths, setNeedsUpdateMonths] = useState<number>(6);
   const [recentlyPublishedDays, setRecentlyPublishedDays] = useState<number>(7);
+  const [showUpcomingReleases, setShowUpcomingReleases] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -341,6 +342,12 @@ const Home = () => {
               setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays);
             }
             
+            // Set the show upcoming releases flag
+            if (parsedConfig.showUpcomingReleases !== undefined) {
+              console.log('Loaded showUpcomingReleases from localStorage:', parsedConfig.showUpcomingReleases);
+              setShowUpcomingReleases(parsedConfig.showUpcomingReleases);
+            }
+            
             return;
           } catch (e) {
             console.error('Error parsing stored config:', e);
@@ -377,7 +384,8 @@ const Home = () => {
           localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
             excludedContentTypes: defaultExcluded,
             needsUpdateMonths: 6,
-            recentlyPublishedDays: 7
+            recentlyPublishedDays: 7,
+            showUpcomingReleases: true
           }));
         } catch (error) {
           console.error('Error fetching content types for defaults:', error);
@@ -863,18 +871,20 @@ const Home = () => {
               title="Content Trends"
             />
             {/* Upcoming Releases Section */}
-            <div className="flex flex-col gap-2 md:gap-4">
-              <h2 className="text-xl font-semibold">Upcoming Scheduled Releases</h2>
-              <ContentTable
-                data={scheduledReleases}
-                showItemCount={true}
-                showUpdatedAt={true}
-                showUpdatedBy={true}
-                onReschedule={handleRescheduleRelease}
-                onCancel={handleCancelRelease}
-                hideActions={false}
-              />
-            </div>
+            {showUpcomingReleases && (
+              <div className="flex flex-col gap-2 md:gap-4">
+                <h2 className="text-xl font-semibold">Upcoming Scheduled Releases</h2>
+                <ContentTable
+                  data={scheduledReleases}
+                  showItemCount={true}
+                  showUpdatedAt={true}
+                  showUpdatedBy={true}
+                  onReschedule={handleRescheduleRelease}
+                  onCancel={handleCancelRelease}
+                  hideActions={false}
+                />
+              </div>
+            )}
 
             <ContentEntryTabs
               scheduledContent={scheduledContent}
