@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText, GitBranchPlus } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
@@ -809,13 +809,24 @@ const Home = () => {
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
-        <h1 className="text-2xl font-bold">Content Dashboard</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold">Content Dashboard</h1>
+          <button 
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
+            title="Refresh dashboard"
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-gray-400' : 'text-gray-600'}`} />
+            <span className="text-sm text-gray-600">Refresh</span>
+          </button>
+        </div>
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
             <div className="flex flex-col items-center">
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
               <p className="mt-4 text-muted-foreground">Loading content data...</p>
-              <p className="mt-2 text-sm text-muted-foreground">Time elapsed: {loadingTime}s</p>
+              {/* <p className="mt-2 text-sm text-muted-foreground">Time elapsed: {loadingTime}s</p> */}
             </div>
           </div>
         ) : error ? (
