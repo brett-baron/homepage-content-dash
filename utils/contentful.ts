@@ -1,4 +1,5 @@
 import { CollectionProp, Entry, EntryProps } from 'contentful-management';
+import { calculatePercentageChange } from './calculations';
 
 interface ScheduledAction {
   sys: {
@@ -201,13 +202,8 @@ export const getContentStatsPaginated = async (
   });
   const previousMonthPublished = previousMonthResponse.total;
 
-  // Calculate percent change
-  let percentChange = 0;
-  if (previousMonthPublished > 0) {
-    percentChange = ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
-  } else if (thisMonthPublished > 0) {
-    percentChange = 100;
-  }
+  // Calculate percent change using shared utility
+  const percentChange = calculatePercentageChange(thisMonthPublished, previousMonthPublished);
 
   // 4. Get recently published count
   const recentlyPublishedQuery = {
@@ -362,13 +358,7 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
     }
     
     const prevCount = array[index - 1].count;
-    let percentChange = 0;
-    
-    if (prevCount > 0) {
-      percentChange = ((month.count - prevCount) / prevCount) * 100;
-    } else if (month.count > 0) {
-      percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
-    }
+    const percentChange = calculatePercentageChange(month.count, prevCount);
     
     return { ...month, percentChange };
   });
@@ -406,12 +396,14 @@ export const fetchChartData = async (
     
     const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-01`;
     
+    // Query for entries first published in this month
     const promise = cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
         'sys.firstPublishedAt[gte]': monthDate.toISOString(),
         'sys.firstPublishedAt[lt]': nextMonth.toISOString(),
+        'sys.publishedAt[exists]': true,
         limit: 1
       }
     }).then((response: { total: number }) => ({
@@ -427,20 +419,14 @@ export const fetchChartData = async (
   
   const monthResults = await Promise.all(monthPromises);
   
-  // Calculate month-over-month percent changes
+  // Calculate month-over-month percent changes using shared utility
   const monthsWithPercentChange = monthResults.map((month, index, array) => {
     if (index === 0) {
       return { ...month, percentChange: 0 };
     }
     
     const prevCount = array[index - 1].count;
-    let percentChange = 0;
-    
-    if (prevCount > 0) {
-      percentChange = ((month.count - prevCount) / prevCount) * 100;
-    } else if (month.count > 0) {
-      percentChange = 100;
-    }
+    const percentChange = calculatePercentageChange(month.count, prevCount);
     
     return { ...month, percentChange };
   });
@@ -519,13 +505,7 @@ export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): A
     }
     
     const prevCount = array[index - 1].count;
-    let percentChange = 0;
-    
-    if (prevCount > 0) {
-      percentChange = ((month.count - prevCount) / prevCount) * 100;
-    } else if (month.count > 0) {
-      percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
-    }
+    const percentChange = calculatePercentageChange(month.count, prevCount);
     
     return { ...month, percentChange };
   });

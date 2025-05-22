@@ -10,6 +10,7 @@ import { getContentStats, generateChartData, generateUpdatedChartData, getConten
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { AppInstallationParameters } from './ConfigScreen';
+import { calculatePercentageChange, formatPercentageChange } from "../../utils/calculations"
 
 // Sample data for upcoming releases
 const contentData = [
@@ -810,7 +811,7 @@ const Home = () => {
                     ? 'No new content published recently'
                     : (
                       <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
-                        {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
+                        {formatPercentageChange(stats.percentChange)} publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
                       </span>
                     )}
                   </p>

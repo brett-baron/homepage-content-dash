@@ -1,5 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts"
 import { useState, useEffect } from "react"
+import { calculatePercentageChange, formatPercentageChange } from "../utils/calculations"
 import {
   Select,
   SelectContent,
@@ -51,7 +52,7 @@ const CustomTooltip = ({ active, payload, label, contentType }: any) => {
         <p>{`${count} ${contentType === 'new' ? "new entries" : "entries published or updated"}`}</p>
         {percentChange !== undefined && (
           <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
-            {percentChange >= 0 ? "+" : ""}{percentChange.toFixed(1)}% from previous month
+            {formatPercentageChange(percentChange)} from previous month
           </p>
         )}
       </div>
@@ -127,25 +128,17 @@ export default function ContentChart({
 
     const filtered = filterData();
     
-    // Calculate month-over-month percentage changes
+    // Calculate month-over-month percentage changes using shared utility
     const filteredWithPercentage = filtered.map((item, index, array) => {
       if (index === 0 || array.length <= 1) {
         return { ...item, percentChange: 0 };
       }
       
       const prevCount = array[index - 1].count;
-      let percentChange = 0;
-      
-      if (prevCount > 0) {
-        percentChange = ((item.count - prevCount) / prevCount) * 100;
-      } else if (item.count > 0) {
-        percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
-      }
+      const percentChange = calculatePercentageChange(item.count, prevCount);
       
       return { ...item, percentChange };
     });
-    
-    console.log(`Filtered ${contentType} data: ${filteredWithPercentage.length} items`);
     setFilteredData(filteredWithPercentage);
     
     // Calculate appropriate y-axis range with consistent intervals
