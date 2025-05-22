@@ -46,6 +46,23 @@ interface ContentItem {
   date?: string
   isShowMoreRow?: boolean
   needsUpdate?: boolean
+  fieldStatus?: {
+    '*': {
+      [locale: string]: 'draft' | 'published' | 'changed'
+    }
+  } | null
+}
+
+interface EntryStatus {
+  type: 'draft' | 'published' | 'changed'
+  label: string
+  variant: 'warning' | 'positive' | 'primary'
+}
+
+interface ScheduledReleaseStatus {
+  type: 'scheduled' | 'cancelled' | 'completed'
+  label: string
+  variant: 'primary' | 'negative' | 'positive'
 }
 
 interface ScheduledRelease {
@@ -94,6 +111,94 @@ const formatDate = (dateStr: string | undefined) => {
   return date.toLocaleDateString();
 };
 
+// Helper function to map CMA entry to ContentItem
+const mapCMAEntryToContentItem = (entry: any): ContentItem => {
+  return {
+    id: entry.sys.id,
+    title: entry.fields?.internalName?.['en-US'] || entry.fields?.title?.['en-US'] || 'Untitled',
+    author: entry.sys.createdBy?.sys?.id || 'Unknown',
+    status: entry.sys.publishedVersion ? 'Published' : 'Draft',
+    workflow: entry.sys.contentType?.sys?.id || '',
+    stage: entry.sys.publishedVersion ? 'Published' : 'Draft',
+    date: entry.sys.publishedAt || entry.sys.updatedAt,
+    fieldStatus: entry.sys.fieldStatus || null,
+    needsUpdate: false
+  };
+};
+
+// Helper function to determine entry status
+const determineEntryStatus = (item: ContentItem): EntryStatus => {
+  if (item.fieldStatus && typeof item.fieldStatus === 'object') {
+    const hasChangedStatus = Object.entries(item.fieldStatus).some(([key, value]) => {
+      if (typeof value === 'object') {
+        return Object.values(value).some(status => status === 'changed');
+      }
+      return value === 'changed';
+    });
+    
+    if (hasChangedStatus) {
+      return {
+        type: 'changed',
+        label: 'Changed',
+        variant: 'primary'
+      };
+    }
+  }
+
+  if (item.stage === 'Published' || item.status === 'Published') {
+    return {
+      type: 'published',
+      label: 'Published',
+      variant: 'positive'
+    };
+  }
+
+  if (item.status === 'Draft' || item.stage === 'Draft') {
+    return {
+      type: 'draft',
+      label: 'Draft',
+      variant: 'warning'
+    };
+  }
+
+  const displayStatus = item.stage || item.status;
+  return {
+    type: 'published',
+    label: displayStatus,
+    variant: 'positive'
+  };
+};
+
+// Helper function to determine scheduled release status
+const determineScheduledReleaseStatus = (status: string): ScheduledReleaseStatus => {
+  switch (status.toLowerCase()) {
+    case 'scheduled':
+      return {
+        type: 'scheduled',
+        label: 'Scheduled',
+        variant: 'primary'
+      };
+    case 'cancelled':
+      return {
+        type: 'cancelled',
+        label: 'Cancelled',
+        variant: 'negative'
+      };
+    case 'completed':
+      return {
+        type: 'completed',
+        label: 'Completed',
+        variant: 'positive'
+      };
+    default:
+      return {
+        type: 'scheduled',
+        label: status,
+        variant: 'primary'
+      };
+  }
+};
+
 export function ContentTable({ 
   title, 
   description, 
@@ -129,19 +234,55 @@ export function ContentTable({
   // Check if the data is ScheduledRelease[]
   const isScheduledReleaseData = data.length > 0 && 'scheduledDateTime' in data[0];
 
-  // Only sort if it's a scheduled release table - otherwise respect pre-sorted order from ContentEntryTabs
-  const sortedData = isScheduledReleaseData 
-    ? [...data].sort((a, b) => {
-        // Skip sorting for special rows like "Show More"
-        if (a.isShowMoreRow || b.isShowMoreRow) {
-          return 0;
+  // Add effect to enrich data with CMA responses
+  const [enrichedData, setEnrichedData] = useState<(ContentItem | ScheduledRelease)[]>(data);
+  useEffect(() => {
+    const enrichDataWithCMA = async () => {
+      if (!isScheduledReleaseData) {
+        try {
+          const enrichedItems = await Promise.all(
+            data.map(async (item) => {
+              if (item.isShowMoreRow) return item as ContentItem;
+              
+              const contentItem = item as ContentItem;
+              try {
+                const entry = await cma.entry.get({
+                  entryId: contentItem.id,
+                  spaceId: sdk.ids.space,
+                  environmentId: sdk.ids.environment
+                });
+                
+                return {
+                  ...contentItem,
+                  fieldStatus: entry.sys.fieldStatus as ContentItem['fieldStatus']
+                };
+              } catch (error) {
+                return contentItem;
+              }
+            })
+          );
+          
+          setEnrichedData(enrichedItems as (ContentItem | ScheduledRelease)[]);
+        } catch (error) {
+          // Silently handle error - consider adding error state if needed
+          setEnrichedData(data);
         }
-        
-        // For scheduled releases, sort by scheduled date/time
+      } else {
+        setEnrichedData(data);
+      }
+    };
+
+    enrichDataWithCMA();
+  }, [data, cma, sdk.ids.space, sdk.ids.environment, isScheduledReleaseData]);
+
+  // Use enrichedData instead of data for rendering
+  const sortedData = isScheduledReleaseData 
+    ? [...enrichedData].sort((a, b) => {
+        if (a.isShowMoreRow || b.isShowMoreRow) return 0;
         return new Date((a as ScheduledRelease).scheduledDateTime).getTime() - 
                new Date((b as ScheduledRelease).scheduledDateTime).getTime();
-      }) 
-    : data; // Use data as-is (already sorted by ContentEntryTabs)
+      })
+    : enrichedData;
 
   // Reset selection when data changes
   useEffect(() => {
@@ -269,17 +410,44 @@ export function ContentTable({
     
     setIsLoading(true);
     try {
-      // Get the scheduled action for this release
+      // Get the scheduled action for this release, specifically querying for scheduled status
       const scheduledActions = await cma.scheduledActions.getMany({
         spaceId: sdk.ids.space,
         query: {
           'entity.sys.id': selectedRelease.id,
-          'environment.sys.id': sdk.ids.environment
+          'environment.sys.id': sdk.ids.environment,
+          'sys.status': 'scheduled'  // Only get actions with scheduled status
         }
       });
 
+      console.log('Found scheduled actions:', scheduledActions.items);
+
+      // Find the active scheduled action
       const action = scheduledActions.items[0];
-      if (!action) throw new Error('No scheduled action found for this release');
+      if (!action) {
+        // If no scheduled action found, try to get all actions to check their status
+        const allActions = await cma.scheduledActions.getMany({
+          spaceId: sdk.ids.space,
+          query: {
+            'entity.sys.id': selectedRelease.id,
+            'environment.sys.id': sdk.ids.environment
+          }
+        });
+
+        if (allActions.items.length > 0) {
+          // There are actions but none are scheduled - the UI is out of sync
+          throw new Error('Release status has changed. Please refresh the page to see the current status.');
+        } else {
+          throw new Error('No scheduled action found for this release');
+        }
+      }
+
+      console.log('Selected action:', {
+        id: action.sys.id,
+        status: action.sys.status,
+        version: action.sys.version,
+        scheduledFor: action.scheduledFor
+      });
 
       // Parse the time in 12-hour format
       const [time, period] = selectedTime.split(' ');
@@ -297,34 +465,95 @@ export function ContentTable({
       const newDate = new Date(selectedDate);
       newDate.setHours(hour24, parseInt(minutes, 10), 0, 0);
 
+      // Validate that the new date is in the future
+      if (newDate <= new Date()) {
+        throw new Error('Scheduled date and time must be in the future');
+      }
+
       // Format the date in ISO 8601 format
       const isoDate = newDate.toISOString();
-      
-      // Update the scheduled action with new datetime
-      // Only include the required fields in the update payload
-      await cma.scheduledActions.update(
-        {
-          spaceId: sdk.ids.space,
-          version: action.sys.version,
-          scheduledActionId: action.sys.id
-        },
-        {
-          entity: action.entity,
-          environment: action.environment,
-          scheduledFor: {
-            datetime: isoDate
-          },
-          action: action.action
-        }
-      );
 
-      setIsRescheduleModalOpen(false);
-      if (onReschedule) {
-        await onReschedule(selectedRelease.id, isoDate);
+      console.log('Updating scheduled action:', {
+        actionId: action.sys.id,
+        version: action.sys.version,
+        newDateTime: isoDate,
+        timezone: selectedTimezone
+      });
+      
+      try {
+        // Update the scheduled action with new datetime
+        const updatedAction = await cma.scheduledActions.update(
+          {
+            spaceId: sdk.ids.space,
+            version: action.sys.version,
+            scheduledActionId: action.sys.id
+          },
+          {
+            entity: action.entity,
+            environment: action.environment,
+            action: action.action,
+            scheduledFor: {
+              datetime: isoDate,
+              timezone: selectedTimezone
+            }
+          }
+        );
+
+        console.log('Update response:', updatedAction);
+
+        setIsRescheduleModalOpen(false);
+        if (onReschedule) {
+          await onReschedule(selectedRelease.id, isoDate);
+        }
+        
+        // Show success notification
+        sdk.notifier.success('Release has been rescheduled successfully');
+      } catch (updateError) {
+        // If update fails, check if the action status has changed
+        const refreshedAction = await cma.scheduledActions.get({
+          spaceId: sdk.ids.space,
+          environmentId: sdk.ids.environment,
+          scheduledActionId: action.sys.id
+        });
+
+        if (refreshedAction.sys.status !== 'scheduled') {
+          throw new Error('Release status has changed while updating. Please refresh the page to see the current status.');
+        } else {
+          throw updateError;
+        }
       }
     } catch (error) {
       console.error('Error rescheduling release:', error);
-      sdk.notifier.error('Failed to reschedule release. Please try again.');
+      
+      // Log the full error details
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+          // @ts-ignore
+          details: error.details,
+          // @ts-ignore
+          request: error.request
+        });
+      }
+      
+      // Handle specific error cases
+      let errorMessage = 'Failed to reschedule release. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('status has changed')) {
+          errorMessage = error.message;
+          // Close the modal since the status is out of sync
+          setIsRescheduleModalOpen(false);
+        } else if (error.message.includes('Cannot update scheduled action')) {
+          errorMessage = 'This release cannot be rescheduled. Please refresh the page to get the latest status.';
+          setIsRescheduleModalOpen(false);
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
+      }
+      
+      sdk.notifier.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -369,6 +598,31 @@ export function ContentTable({
       setIsLoading(false);
     }
   };
+
+  // Add effect to fetch and log full entry data for each item
+  useEffect(() => {
+    const fetchEntryDetails = async () => {
+      if (!isScheduledReleaseData) {
+        for (const item of data) {
+          try {
+            const contentItem = item as ContentItem;
+            const entry = await cma.entry.get({
+              entryId: contentItem.id,
+              spaceId: sdk.ids.space,
+              environmentId: sdk.ids.environment
+            });
+          } catch (error) {
+            console.error('Error fetching entry details:', {
+              entryId: (item as ContentItem).id,
+              error
+            });
+          }
+        }
+      }
+    };
+
+    fetchEntryDetails();
+  }, [data, cma, sdk.ids.space, sdk.ids.environment, isScheduledReleaseData]);
 
   return (
     <>
@@ -441,7 +695,7 @@ export function ContentTable({
               ) : (
                 <>
                   <TableHead>Author</TableHead>
-                  {showStage && <TableHead>Stage</TableHead>}
+                  {showStage && <TableHead>Status</TableHead>}
                   <TableHead>Content Type</TableHead>
                   <TableHead>Published Date</TableHead>
                 </>
@@ -507,7 +761,10 @@ export function ContentTable({
                       <>
                         <TableCell>{formatDateTime((item as ScheduledRelease).scheduledDateTime)}</TableCell>
                         <TableCell>
-                          <Badge variant="primary">{item.status}</Badge>
+                          {(() => {
+                            const releaseStatus = determineScheduledReleaseStatus(item.status);
+                            return <Badge variant={releaseStatus.variant}>{releaseStatus.label}</Badge>;
+                          })()}
                         </TableCell>
                         {showItemCount && (
                           <TableCell>{(item as ScheduledRelease).itemCount} items</TableCell>
@@ -524,21 +781,11 @@ export function ContentTable({
                         <TableCell>{(item as ContentItem).author}</TableCell>
                         {showStage && (
                           <TableCell>
-                            <Badge
-                              variant={
-                                (item as ContentItem).stage === "Published"
-                                  ? "positive"
-                                  : (item as ContentItem).stage === "Needs Update"
-                                    ? "negative"
-                                    : (item as ContentItem).stage === "Ready to Publish" ||
-                                        (item as ContentItem).stage === "Scheduled" ||
-                                        (item as ContentItem).stage === "Ready to Launch"
-                                      ? "primary"
-                                      : "secondary"
-                              }
-                            >
-                              {(item as ContentItem).stage}
-                            </Badge>
+                            {(() => {
+                              const contentItem = item as ContentItem;
+                              const entryStatus = determineEntryStatus(contentItem);
+                              return <Badge variant={entryStatus.variant}>{entryStatus.label}</Badge>;
+                            })()}
                           </TableCell>
                         )}
                         <TableCell>{(item as ContentItem).workflow}</TableCell>

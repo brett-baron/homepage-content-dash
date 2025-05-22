@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText, GitBranchPlus } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
@@ -10,6 +10,7 @@ import { getContentStats, generateChartData, generateUpdatedChartData, getConten
 import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { AppInstallationParameters } from './ConfigScreen';
+import { calculatePercentageChange, formatPercentageChange } from "../../utils/calculations"
 
 // Sample data for upcoming releases
 const contentData = [
@@ -252,6 +253,25 @@ interface ScheduledAction {
   };
 }
 
+interface ContentType {
+  sys: {
+    id: string;
+  };
+}
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+interface CachedData<T> {
+  data: T;
+  timestamp: number;
+}
+
+// Add before the Home component
+const cache = {
+  users: new Map<string, CachedData<string>>(),
+  contentTypes: new Map<string, CachedData<any>>(),
+};
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -279,26 +299,71 @@ const Home = () => {
   const [showUpcomingReleases, setShowUpcomingReleases] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Add loading timer state
+  const [loadingTime, setLoadingTime] = useState<number>(0);
+  const loadingTimerRef = useRef<NodeJS.Timeout>();
 
-  // Function to get user's full name
-  const getUserFullName = async (userId: string): Promise<string> => {
-    // Check cache first
+  // Start loading timer when loading begins
+  useEffect(() => {
+    if (isLoading) {
+      const startTime = Date.now();
+      loadingTimerRef.current = setInterval(() => {
+        setLoadingTime(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+    } else {
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current);
+      }
+      setLoadingTime(0);
+    }
+    
+    return () => {
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current);
+      }
+    };
+  }, [isLoading]);
+
+  // Fix the getUserFullName function to use getManyForSpace
+  const getUserFullName = useCallback(async (userId: string): Promise<string> => {
+    // Check memory cache first
     if (userCache[userId]) {
       return userCache[userId];
     }
 
+    // Check cache
+    const cachedUser = cache.users.get(userId);
+    if (cachedUser && Date.now() - cachedUser.timestamp < CACHE_DURATION) {
+      // Update component state cache
+      setUserCache(prev => ({
+        ...prev,
+        [userId]: cachedUser.data
+      }));
+      return cachedUser.data;
+    }
+
     try {
-      // Fetch user data using getForSpace method
-      const user = await cma.user.getForSpace({
-        spaceId: sdk.ids.space,
-        userId
+      // Use getManyForSpace instead of getMany
+      const users = await cma.user.getManyForSpace({
+        spaceId: sdk.ids.space
       });
       
+      const user = users.items.find(u => u.sys.id === userId);
+      if (!user) {
+        throw new Error(`User not found: ${userId}`);
+      }
+
       const fullName = user.firstName && user.lastName 
         ? `${user.firstName} ${user.lastName}`
         : user.email || userId;
 
-      // Update cache
+      // Update both caches
+      cache.users.set(userId, {
+        data: fullName,
+        timestamp: Date.now()
+      });
+
       setUserCache(prev => ({
         ...prev,
         [userId]: fullName
@@ -307,100 +372,85 @@ const Home = () => {
       return fullName;
     } catch (error) {
       console.error(`Error fetching user data for ${userId}:`, error);
-      return userId; // Fallback to ID if fetch fails
+      return userId;
     }
-  };
+  }, [cma, sdk.ids.space, userCache]);
 
-  // Separate useEffect to fetch app installation parameters
-  useEffect(() => {
-    // Function to get app installation parameters
-    const fetchAppInstallationParameters = async () => {
-      try {
-        // For simplicity, we'll get the configuration directly from localStorage
-        // In a real app, you'd implement proper API calls to your backend service
-        const storedConfig = localStorage.getItem('contentDashboardConfig');
-        
-        if (storedConfig) {
-          try {
-            const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
-            
-            // Set the excluded content types
-            if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
-              console.log('Loaded excludedContentTypes from localStorage:', parsedConfig.excludedContentTypes);
-              setExcludedContentTypes(parsedConfig.excludedContentTypes);
-            }
-            
-            // Set the needs update months threshold
-            if (parsedConfig.needsUpdateMonths && parsedConfig.needsUpdateMonths > 0) {
-              console.log('Loaded needsUpdateMonths from localStorage:', parsedConfig.needsUpdateMonths);
-              setNeedsUpdateMonths(parsedConfig.needsUpdateMonths);
-            }
-            
-            // Set the recently published days threshold
-            if (parsedConfig.recentlyPublishedDays && parsedConfig.recentlyPublishedDays > 0) {
-              console.log('Loaded recentlyPublishedDays from localStorage:', parsedConfig.recentlyPublishedDays);
-              setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays);
-            }
-            
-            // Set the show upcoming releases flag
-            if (parsedConfig.showUpcomingReleases !== undefined) {
-              console.log('Loaded showUpcomingReleases from localStorage:', parsedConfig.showUpcomingReleases);
-              setShowUpcomingReleases(parsedConfig.showUpcomingReleases);
-            }
-            
-            return;
-          } catch (e) {
-            console.error('Error parsing stored config:', e);
-          }
-        }
-        
-        // If we couldn't get a configuration from localStorage, use the default values
-        // BUT we'll check if they exist first by fetching content types
-        try {
-          const contentTypesResponse = await cma.contentType.getMany({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment
-          });
-          
-          const availableContentTypeIds = contentTypesResponse.items.map(ct => ct.sys.id);
-          console.log('Available content types for defaults:', availableContentTypeIds);
-          
-          // Filter the default excluded types to only include ones that exist
-          const defaultExcludedBase = ['page', 'settings', 'navigation', 'siteConfig'];
-          const defaultExcluded = defaultExcludedBase.filter(id => 
-            availableContentTypeIds.includes(id)
-          );
-          
-          if (defaultExcluded.length !== defaultExcludedBase.length) {
-            console.warn('Some default excluded content types do not exist in this space:', 
-              defaultExcludedBase.filter(id => !availableContentTypeIds.includes(id))
-            );
-          }
-          
-          setExcludedContentTypes(defaultExcluded);
-          console.log('Using filtered default excluded content types:', defaultExcluded);
-          
-          // For demo purposes, save these default values to localStorage
-          localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
-            excludedContentTypes: defaultExcluded,
-            needsUpdateMonths: 6,
-            recentlyPublishedDays: 7,
-            showUpcomingReleases: true
-          }));
-        } catch (error) {
-          console.error('Error fetching content types for defaults:', error);
-          // Fallback to empty array if we can't fetch content types
-          setExcludedContentTypes([]);
-        }
-      } catch (error) {
-        console.error('Error setting up excluded content types:', error);
-        // Use empty array as fallback
-        setExcludedContentTypes([]);
-      }
-    };
+  // Add a function to fetch content types with caching
+  const getContentTypes = useCallback(async () => {
+    const cacheKey = `${sdk.ids.space}-${sdk.ids.environment}`;
+    const cachedTypes = cache.contentTypes.get(cacheKey);
+    
+    if (cachedTypes && Date.now() - cachedTypes.timestamp < CACHE_DURATION) {
+      return cachedTypes.data;
+    }
 
-    fetchAppInstallationParameters();
+    const contentTypesResponse = await cma.contentType.getMany({
+      spaceId: sdk.ids.space,
+      environmentId: sdk.ids.environment
+    });
+
+    cache.contentTypes.set(cacheKey, {
+      data: contentTypesResponse,
+      timestamp: Date.now()
+    });
+
+    return contentTypesResponse;
   }, [cma, sdk.ids.space, sdk.ids.environment]);
+
+  // Update the fetchAppInstallationParameters function to use cached content types
+  const fetchAppInstallationParameters = useCallback(async () => {
+    try {
+      const storedConfig = localStorage.getItem('contentDashboardConfig');
+      
+      if (storedConfig) {
+        try {
+          const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
+          
+          if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
+            setExcludedContentTypes(parsedConfig.excludedContentTypes);
+          }
+          
+          if (parsedConfig.needsUpdateMonths && parsedConfig.needsUpdateMonths > 0) {
+            setNeedsUpdateMonths(parsedConfig.needsUpdateMonths);
+          }
+          
+          if (parsedConfig.recentlyPublishedDays && parsedConfig.recentlyPublishedDays > 0) {
+            setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays);
+          }
+          
+          if (parsedConfig.showUpcomingReleases !== undefined) {
+            setShowUpcomingReleases(parsedConfig.showUpcomingReleases);
+          }
+          
+          return;
+        } catch (e) {
+          console.error('Error parsing stored config:', e);
+        }
+      }
+      
+      // Get content types from cache or API
+      const contentTypesResponse = await getContentTypes();
+      const availableContentTypeIds = contentTypesResponse.items.map((ct: ContentType) => ct.sys.id);
+      
+      const defaultExcludedBase = ['page', 'settings', 'navigation', 'siteConfig'];
+      const defaultExcluded = defaultExcludedBase.filter(id => 
+        availableContentTypeIds.includes(id)
+      );
+      
+      setExcludedContentTypes(defaultExcluded);
+      
+      localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
+        excludedContentTypes: defaultExcluded,
+        needsUpdateMonths: 6,
+        recentlyPublishedDays: 7,
+        showUpcomingReleases: true
+      }));
+    } catch (error) {
+      console.error('Error setting up excluded content types:', error);
+      setExcludedContentTypes([]);
+    }
+  }, [getContentTypes]);
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -408,73 +458,133 @@ const Home = () => {
         setIsLoading(true);
         setError(null);
         
-        const space = await cma.space.get({ spaceId: sdk.ids.space });
-        const environment = await cma.environment.get({
-          spaceId: sdk.ids.space,
-          environmentId: sdk.ids.environment
-        });
+        // Make initial API calls in parallel
+        const [
+          space,
+          environment,
+          scheduledActions,
+          chartDataFromApi,
+          recentlyPublishedResponse,
+          needsUpdateResponse,
+          orphanedResponse
+        ] = await Promise.all([
+          cma.space.get({ spaceId: sdk.ids.space }),
+          cma.environment.get({
+            spaceId: sdk.ids.space,
+            environmentId: sdk.ids.environment
+          }),
+          cma.scheduledActions.getMany({
+            spaceId: sdk.ids.space,
+            query: {
+              'environment.sys.id': sdk.ids.environment,
+              'sys.status[in]': 'scheduled',
+              'order': 'scheduledFor.datetime',
+              'limit': 500
+            }
+          }),
+          fetchChartData(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            { excludedContentTypes }
+          ),
+          // Recently published content
+          fetchEntriesByType(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            {
+              'sys.publishedAt[gte]': new Date(Date.now() - recentlyPublishedDays * 24 * 60 * 60 * 1000).toISOString(),
+              'order': '-sys.publishedAt',
+              'limit': 100
+            }
+          ),
+          // Needs update content
+          fetchEntriesByType(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            {
+              'sys.publishedAt[exists]': true,
+              'sys.updatedAt[lte]': new Date(Date.now() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000).toISOString(),
+              'order': 'sys.updatedAt',
+              'limit': 100
+            }
+          ),
+          // Orphaned content
+          fetchEntriesByType(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            {
+              'sys.publishedAt[exists]': true,
+              'limit': 100,
+              'order': '-sys.updatedAt'
+            }
+          )
+        ]);
 
-        // Fetch scheduled actions for releases
-        const scheduledActions = await cma.scheduledActions.getMany({
-          spaceId: sdk.ids.space,
-          query: {
-            'environment.sys.id': sdk.ids.environment,
-            'sys.status[in]': 'scheduled',
-            'order': 'scheduledFor.datetime',
-            'limit': 500
+        // Process releases and scheduled entries
+        const now = new Date();
+        const scheduledEntryIds = new Set<string>();
+        const releaseIds = new Set<string>();
+
+        // First pass: collect all entry and release IDs
+        scheduledActions.items.forEach(action => {
+          if (action.sys.status === 'scheduled' && 
+              new Date(action.scheduledFor.datetime) > now &&
+              action.action === 'publish') {
+            
+            if (action.entity.sys.linkType === 'Entry') {
+              scheduledEntryIds.add(action.entity.sys.id);
+            } else if (action.entity.sys.linkType === 'Release') {
+              releaseIds.add(action.entity.sys.id);
+            }
           }
         });
 
-        // Process releases (unchanged from original code)
-        const releaseIds = scheduledActions.items
-          .filter(action => action.entity.sys.linkType === 'Release')
-          .map(action => action.entity.sys.id);
-
+        // Process releases if any exist
         let releasesData: ScheduledRelease[] = [];
-        if (releaseIds.length > 0) {
+        if (releaseIds.size > 0) {
           try {
-            // Fetch each release individually
-            const releasesPromises = releaseIds.map(releaseId => 
-              cma.release.get({
-                spaceId: sdk.ids.space,
-                environmentId: sdk.ids.environment,
-                releaseId
-              })
+            // Fetch releases
+            const releases = await Promise.all(
+              Array.from(releaseIds).map(releaseId => 
+                cma.release.get({
+                  spaceId: sdk.ids.space,
+                  environmentId: sdk.ids.environment,
+                  releaseId
+                })
+              )
             );
+
+            // Get all users for the space
+            const users = await cma.user.getManyForSpace({
+              spaceId: sdk.ids.space
+            });
             
-            const releases = await Promise.all(releasesPromises);
-            
-            // Attach release data to actions
-            scheduledActions.items = scheduledActions.items.map(action => {
-              if (action.entity.sys.linkType === 'Release') {
-                const release = releases.find(r => r.sys.id === action.entity.sys.id);
-                if (release) {
-                  return {
-                    ...action,
-                    release: {
-                      entities: {
-                        items: release.entities.items
-                      }
-                    }
-                  };
-                }
+            // Create user map
+            const userMap = Object.fromEntries(
+              users.items.map(user => [
+                user.sys.id,
+                user.firstName && user.lastName 
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.email || user.sys.id
+              ])
+            );
+
+            // Add release entries to scheduledEntryIds
+            releases.forEach(release => {
+              if (release.entities?.items) {
+                release.entities.items.forEach((entity: { sys: { id: string } }) => {
+                  if (entity.sys?.id) {
+                    scheduledEntryIds.add(entity.sys.id);
+                  }
+                });
               }
-              return action;
             });
 
-            // Get unique user IDs from releases
-            const userIds = new Set(releases.map(release => release.sys.updatedBy.sys.id));
-            
-            // Fetch user data in parallel
-            const userPromises = Array.from(userIds).map(userId => getUserFullName(userId));
-            const userNames = await Promise.all(userPromises);
-            
-            // Create a map of user IDs to names
-            const userMap = Object.fromEntries(
-              Array.from(userIds).map((id, index) => [id, userNames[index]])
-            );
-            
-            // Combine release data with scheduled action data and user names
+            // Process releases data
             releasesData = releases.map(release => {
               const scheduledAction = scheduledActions.items.find(
                 action => action.entity.sys.id === release.sys.id
@@ -484,22 +594,48 @@ const Home = () => {
                 title: release.title,
                 scheduledDateTime: scheduledAction?.scheduledFor.datetime || new Date().toISOString(),
                 status: 'Scheduled',
-                itemCount: release.entities.items.length,
+                itemCount: release.entities?.items?.length || 0,
                 updatedAt: release.sys.updatedAt,
                 updatedBy: userMap[release.sys.updatedBy.sys.id] || release.sys.updatedBy.sys.id
               };
-            });
-
-            // Sort by scheduled date
-            releasesData.sort((a, b) => new Date(a.scheduledDateTime).getTime() - new Date(b.scheduledDateTime).getTime());
+            }).sort((a, b) => new Date(a.scheduledDateTime).getTime() - new Date(b.scheduledDateTime).getTime());
           } catch (error) {
             console.error('Error fetching releases:', error);
           }
         }
-        
-        setScheduledReleases(releasesData);
 
-        // Use the new paginated content stats function
+        // Fetch scheduled entries if any exist
+        let scheduled: EntryProps[] = [];
+        if (scheduledEntryIds.size > 0) {
+          const idArray = Array.from(scheduledEntryIds);
+          const batchSize = 100;
+          const batchPromises = [];
+          
+          for (let i = 0; i < idArray.length; i += batchSize) {
+            const batchIds = idArray.slice(i, i + batchSize);
+            batchPromises.push(
+              cma.entry.getMany({
+                spaceId: sdk.ids.space,
+                environmentId: sdk.ids.environment,
+                query: {
+                  'sys.id[in]': batchIds.join(','),
+                  limit: batchSize
+                }
+              })
+            );
+          }
+          
+          const batchResults = await Promise.all(batchPromises);
+          scheduled = batchResults.flatMap(result => result.items);
+        }
+
+        // Filter orphaned content
+        const filteredOrphaned = orphanedResponse.items.filter((entry: EntryProps) => 
+          !(entry.sys.contentType && 
+            excludedContentTypes.includes(entry.sys.contentType.sys.id))
+        );
+
+        // Get content stats after we have all the scheduled actions processed
         const contentStats = await getContentStatsPaginated(
           cma,
           sdk.ids.space,
@@ -509,128 +645,21 @@ const Home = () => {
           needsUpdateMonths,
           excludedContentTypes
         );
-        
-        setStats(contentStats);
-        
-        // Fetch chart data directly from API
-        const chartDataFromApi = await fetchChartData(
-          cma,
-          sdk.ids.space,
-          sdk.ids.environment,
-          excludedContentTypes
-        );
+
+        // Calculate total scheduled entries (direct entries + entries in releases)
+        const totalScheduledCount = scheduled.length;
+
+        // Update the stats with the correct scheduled count
+        const updatedStats = {
+          ...contentStats,
+          scheduledCount: totalScheduledCount
+        };
+
+        // Update all states at once
+        setStats(updatedStats);
         setChartData(chartDataFromApi);
-        
-        // For updated data, we still need to fetch it
-        // Note: We could implement a similar function to fetchChartData for updates
-        // But for now using the sample data as a placeholder
         setUpdatedChartData(contentData);
-
-        // For content tabs, fetch each category with pagination
-        // 1. Scheduled content - from scheduled actions
-        const now = new Date();
-        const scheduledEntryIds = new Set<string>();
-        
-        scheduledActions.items.forEach(action => {
-          if (action.sys.status === 'scheduled' && 
-              new Date(action.scheduledFor.datetime) > now &&
-              action.action === 'publish') {
-            
-            if (action.entity.sys.linkType === 'Entry') {
-              scheduledEntryIds.add(action.entity.sys.id);
-            } else if (action.entity.sys.linkType === 'Release') {
-              const releaseEntities = (action as ScheduledAction).release?.entities?.items || [];
-              releaseEntities.forEach((entity: { sys?: { id?: string } }) => {
-                if (entity.sys?.id) {
-                  scheduledEntryIds.add(entity.sys.id);
-                }
-              });
-            }
-          }
-        });
-        
-        // If we have scheduled entries, fetch them
-        let scheduled: EntryProps[] = [];
-        if (scheduledEntryIds.size > 0) {
-          // Fetch in batches of 100 if there are many
-          const idArray = Array.from(scheduledEntryIds);
-          const batchSize = 100;
-          let allScheduled: EntryProps[] = [];
-          
-          for (let i = 0; i < idArray.length; i += batchSize) {
-            const batchIds = idArray.slice(i, i + batchSize);
-            const query = {
-              'sys.id[in]': batchIds.join(','),
-              limit: batchSize
-            };
-            
-            const response = await cma.entry.getMany({
-              spaceId: sdk.ids.space,
-              environmentId: sdk.ids.environment,
-              query
-            });
-            
-            allScheduled = [...allScheduled, ...response.items];
-          }
-          
-          scheduled = allScheduled;
-        }
-        
-        // 2. Recently published content
-        const recentlyPublishedDate = new Date();
-        recentlyPublishedDate.setDate(recentlyPublishedDate.getDate() - recentlyPublishedDays);
-        
-        const recentlyPublishedResponse = await fetchEntriesByType(
-          cma,
-          sdk.ids.space,
-          sdk.ids.environment,
-          {
-            'sys.publishedAt[gte]': recentlyPublishedDate.toISOString(),
-            'order': '-sys.publishedAt',
-            'limit': 100
-          }
-        );
-        
-        // 3. Needs update content
-        const needsUpdateDate = new Date();
-        needsUpdateDate.setMonth(needsUpdateDate.getMonth() - needsUpdateMonths);
-        
-        const needsUpdateResponse = await fetchEntriesByType(
-          cma,
-          sdk.ids.space,
-          sdk.ids.environment,
-          {
-            'sys.publishedAt[exists]': true,
-            'sys.updatedAt[lte]': needsUpdateDate.toISOString(),
-            'order': 'sys.updatedAt',
-            'limit': 100
-          }
-        );
-
-        // 4. Orphaned content (this requires more complex logic)
-        // For scalability, we'll limit this to the first 100 entries
-        // A full implementation would require server-side processing
-        const orphanedResponse = await fetchEntriesByType(
-          cma,
-          sdk.ids.space,
-          sdk.ids.environment,
-          {
-            'sys.publishedAt[exists]': true,
-            'limit': 100,
-            'order': '-sys.updatedAt'
-          }
-        );
-        
-        // Filter out content types that should be excluded
-        const filteredOrphaned = orphanedResponse.items.filter(entry => 
-          !(entry.sys.contentType && 
-            excludedContentTypes.includes(entry.sys.contentType.sys.id))
-        );
-        
-        // Note: This isn't truly finding orphaned content in a scalable way
-        // For a real implementation with millions of entries, this would need
-        // server-side processing or a separate indexing service
-        
+        setScheduledReleases(releasesData);
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublishedResponse.items);
         setNeedsUpdateContent(needsUpdateResponse.items);
@@ -780,12 +809,24 @@ const Home = () => {
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
-        <h1 className="text-2xl font-bold">Content Dashboard</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold">Content Dashboard</h1>
+          <button 
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
+            title="Refresh dashboard"
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-gray-400' : 'text-gray-600'}`} />
+            <span className="text-sm text-gray-600">Refresh</span>
+          </button>
+        </div>
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
             <div className="flex flex-col items-center">
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
               <p className="mt-4 text-muted-foreground">Loading content data...</p>
+              {/* <p className="mt-2 text-sm text-muted-foreground">Time elapsed: {loadingTime}s</p> */}
             </div>
           </div>
         ) : error ? (
@@ -810,7 +851,7 @@ const Home = () => {
                     ? 'No new content published recently'
                     : (
                       <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
-                        {stats.percentChange >= 0 ? '+' : ''}{stats.percentChange.toFixed(1)}% publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
+                        {formatPercentageChange(stats.percentChange)} publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
                       </span>
                     )}
                   </p>

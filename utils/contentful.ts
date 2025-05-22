@@ -1,4 +1,5 @@
 import { CollectionProp, Entry, EntryProps } from 'contentful-management';
+import { calculatePercentageChange } from './calculations';
 
 interface ScheduledAction {
   sys: {
@@ -134,8 +135,7 @@ export const getContentStats = async (
   };
 };
 
-// Optimized function to get content stats using separate API calls with filters
-// This is more scalable for spaces with millions of entries
+// Optimized function to get content stats using combined API calls
 export const getContentStatsPaginated = async (
   cma: any,
   spaceId: string,
@@ -147,98 +147,82 @@ export const getContentStatsPaginated = async (
 ): Promise<ContentStats> => {
   const now = new Date();
   
-  // Calculate the start of the current and previous months
-  const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  
-  // Calculate dates for filters
-  const recentlyPublishedDate = new Date(now.getTime() - recentlyPublishedDays * 24 * 60 * 60 * 1000);
-  const needsUpdateDate = new Date(now.getTime() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000);
-
-  // Build content type exclusion string for queries if any types are excluded
-  let contentTypeExclusion = '';
-  if (excludedContentTypes.length > 0) {
-    contentTypeExclusion = `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`;
-  }
-
-  // 1. Get total published count
-  const totalPublishedResponse = await cma.entry.getMany({
-    spaceId,
-    environmentId,
-    query: {
-      'sys.publishedAt[exists]': true,
-      limit: 1 // We only need the total
-    }
-  });
-  const totalPublished = totalPublishedResponse.total;
-
-  // 2. Get current month published count
-  const currentMonthQuery = {
-    'sys.firstPublishedAt[gte]': currentMonth.toISOString(),
-    'sys.publishedAt[exists]': true,
-    limit: 1
+  // Calculate all required dates at once
+  const dates = {
+    currentMonth: new Date(now.getFullYear(), now.getMonth(), 1),
+    previousMonth: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    recentlyPublished: new Date(now.getTime() - recentlyPublishedDays * 24 * 60 * 60 * 1000),
+    needsUpdate: new Date(now.getTime() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000)
   };
-  
-  const currentMonthResponse = await cma.entry.getMany({
-    spaceId,
-    environmentId,
-    query: currentMonthQuery
-  });
-  const thisMonthPublished = currentMonthResponse.total;
 
-  // 3. Get previous month published count
-  const previousMonthQuery = {
-    'sys.firstPublishedAt[gte]': previousMonth.toISOString(),
-    'sys.firstPublishedAt[lt]': currentMonth.toISOString(),
-    'sys.publishedAt[exists]': true,
-    limit: 1
-  };
-  
-  const previousMonthResponse = await cma.entry.getMany({
-    spaceId,
-    environmentId,
-    query: previousMonthQuery
-  });
-  const previousMonthPublished = previousMonthResponse.total;
+  // Build content type exclusion string for queries
+  const contentTypeExclusion = excludedContentTypes.length > 0 
+    ? `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`
+    : '';
+
+  // Make parallel API calls for different metrics
+  const [totalPublished, monthlyStats, recentAndNeedsUpdate] = await Promise.all([
+    // 1. Get total published count
+    cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.publishedAt[exists]': true,
+        limit: 1
+      }
+    }),
+
+    // 2. Combined query for current and previous month stats
+    cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.firstPublishedAt[gte]': dates.previousMonth.toISOString(),
+        'sys.publishedAt[exists]': true,
+        limit: 1000, // Increased limit to ensure we get all entries for accurate counting
+        order: 'sys.firstPublishedAt'
+      }
+    }),
+
+    // 3. Combined query for recently published and needs update
+    cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.publishedAt[exists]': true,
+        limit: 1000,
+        order: 'sys.publishedAt'
+      }
+    })
+  ]);
+
+  // Process monthly stats
+  const thisMonthPublished = monthlyStats.items.filter((entry: ContentfulEntry) => {
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= dates.currentMonth;
+  }).length;
+
+  const previousMonthPublished = monthlyStats.items.filter((entry: ContentfulEntry) => {
+    const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
+    return firstPublishDate >= dates.previousMonth && firstPublishDate < dates.currentMonth;
+  }).length;
 
   // Calculate percent change
-  let percentChange = 0;
-  if (previousMonthPublished > 0) {
-    percentChange = ((thisMonthPublished - previousMonthPublished) / previousMonthPublished) * 100;
-  } else if (thisMonthPublished > 0) {
-    percentChange = 100;
-  }
+  const percentChange = calculatePercentageChange(thisMonthPublished, previousMonthPublished);
 
-  // 4. Get recently published count
-  const recentlyPublishedQuery = {
-    'sys.publishedAt[gte]': recentlyPublishedDate.toISOString(),
-    limit: 1
-  };
-  
-  const recentlyPublishedResponse = await cma.entry.getMany({
-    spaceId,
-    environmentId,
-    query: recentlyPublishedQuery
-  });
-  const recentlyPublishedCount = recentlyPublishedResponse.total;
+  // Process recent and needs update counts
+  const recentlyPublishedCount = recentAndNeedsUpdate.items.filter((entry: ContentfulEntry) => {
+    const publishDate = new Date(entry.sys.publishedAt!);
+    return publishDate >= dates.recentlyPublished;
+  }).length;
 
-  // 5. Get needs update count
-  const needsUpdateQuery = {
-    'sys.publishedAt[lte]': needsUpdateDate.toISOString(),
-    'sys.updatedAt[lte]': needsUpdateDate.toISOString(),
-    limit: 1
-  };
-  
-  const needsUpdateResponse = await cma.entry.getMany({
-    spaceId,
-    environmentId,
-    query: needsUpdateQuery
-  });
-  const needsUpdateCount = needsUpdateResponse.total;
+  const needsUpdateCount = recentAndNeedsUpdate.items.filter((entry: ContentfulEntry) => {
+    const publishDate = new Date(entry.sys.publishedAt!);
+    return publishDate <= dates.needsUpdate;
+  }).length;
 
-  // 6. Calculate scheduled count from actions
+  // Calculate scheduled count from actions
   const scheduledEntryIds = new Set<string>();
-  
   actions?.forEach((action: ScheduledAction) => {
     if (action.sys.status === 'scheduled' && 
         new Date(action.scheduledFor.datetime) > now &&
@@ -247,8 +231,7 @@ export const getContentStatsPaginated = async (
       if (action.entity.sys.linkType === 'Entry') {
         scheduledEntryIds.add(action.entity.sys.id);
       } else if (action.entity.sys.linkType === 'Release') {
-        const releaseEntities = action.release?.entities?.items || [];
-        releaseEntities.forEach((entity: any) => {
+        action.release?.entities?.items?.forEach((entity: any) => {
           if (entity.sys?.id) {
             scheduledEntryIds.add(entity.sys.id);
           }
@@ -257,12 +240,10 @@ export const getContentStatsPaginated = async (
     }
   });
 
-  const scheduledCount = scheduledEntryIds.size;
-
   return {
-    totalPublished,
+    totalPublished: totalPublished.total,
     percentChange,
-    scheduledCount,
+    scheduledCount: scheduledEntryIds.size,
     recentlyPublishedCount,
     needsUpdateCount,
     previousMonthPublished,
@@ -362,13 +343,7 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
     }
     
     const prevCount = array[index - 1].count;
-    let percentChange = 0;
-    
-    if (prevCount > 0) {
-      percentChange = ((month.count - prevCount) / prevCount) * 100;
-    } else if (month.count > 0) {
-      percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
-    }
+    const percentChange = calculatePercentageChange(month.count, prevCount);
     
     return { ...month, percentChange };
   });
@@ -376,76 +351,81 @@ export const generateChartData = (entries: CollectionProp<EntryProps>): Array<{ 
   return monthsWithPercentChange;
 };
 
-// Fetch chart data directly from the API with filters
+// Fetch chart data directly from the API with filters and configurable time range
 export const fetchChartData = async (
   cma: any,
   spaceId: string,
   environmentId: string,
-  excludedContentTypes: string[] = []
+  options: {
+    monthsToShow?: number;
+    excludedContentTypes?: string[];
+  } = {}
 ): Promise<Array<{ date: string; count: number; percentChange?: number }>> => {
+  const { 
+    monthsToShow = 12, // Default to showing 12 months of data
+    excludedContentTypes = []
+  } = options;
+
   const now = new Date();
-  const startDate = new Date(2024, 5, 1); // June 1, 2024 as default start
-  
-  // Create array of all months from start date to current date
-  const months: Array<{ date: string; count: number }> = [];
-  const currentDate = new Date(now.getFullYear(), now.getMonth(), 1);
-  let monthDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  const startDate = new Date(now);
+  startDate.setMonth(now.getMonth() - monthsToShow + 1);
+  startDate.setDate(1); // First day of the month
   
   // Build content type exclusion for queries
-  let contentTypeParams = '';
-  if (excludedContentTypes.length > 0) {
-    contentTypeParams = `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`;
-  }
+  const contentTypeParams = excludedContentTypes.length > 0
+    ? `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`
+    : '';
   
-  // Fetch counts for each month in parallel
-  const monthPromises = [];
-  
-  while (monthDate <= currentDate) {
-    const nextMonth = new Date(monthDate);
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    
-    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-01`;
-    
-    const promise = cma.entry.getMany({
-      spaceId,
-      environmentId,
-      query: {
-        'sys.firstPublishedAt[gte]': monthDate.toISOString(),
-        'sys.firstPublishedAt[lt]': nextMonth.toISOString(),
-        limit: 1
-      }
-    }).then((response: { total: number }) => ({
-      date: monthKey,
-      count: response.total
-    }));
-    
-    monthPromises.push(promise);
-    
-    // Advance to next month
-    monthDate.setMonth(monthDate.getMonth() + 1);
-  }
-  
-  const monthResults = await Promise.all(monthPromises);
-  
-  // Calculate month-over-month percent changes
-  const monthsWithPercentChange = monthResults.map((month, index, array) => {
-    if (index === 0) {
-      return { ...month, percentChange: 0 };
+  // Instead of making a separate API call for each month,
+  // make one call for the entire date range and process the results
+  const response = await cma.entry.getMany({
+    spaceId,
+    environmentId,
+    query: {
+      'sys.firstPublishedAt[gte]': startDate.toISOString(),
+      'sys.publishedAt[exists]': true,
+      limit: 1000,
+      order: 'sys.firstPublishedAt'
     }
-    
-    const prevCount = array[index - 1].count;
-    let percentChange = 0;
-    
-    if (prevCount > 0) {
-      percentChange = ((month.count - prevCount) / prevCount) * 100;
-    } else if (month.count > 0) {
-      percentChange = 100;
-    }
-    
-    return { ...month, percentChange };
   });
+
+  // Create a map to store counts by month
+  const monthCounts: Record<string, number> = {};
   
-  return monthsWithPercentChange;
+  // Initialize all months with zero counts
+  let currentMonth = new Date(startDate);
+  while (currentMonth <= now) {
+    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
+    monthCounts[monthKey] = 0;
+    currentMonth.setMonth(currentMonth.getMonth() + 1);
+  }
+
+  // Count entries by month
+  response.items.forEach((entry: ContentfulEntry) => {
+    if (entry.sys.firstPublishedAt) {
+      const publishDate = new Date(entry.sys.firstPublishedAt);
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      if (monthCounts[monthKey] !== undefined) {
+        monthCounts[monthKey]++;
+      }
+    }
+  });
+
+  // Convert to array format and calculate percent changes
+  const result = Object.entries(monthCounts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, count], index, array) => {
+      if (index === 0) {
+        return { date, count, percentChange: 0 };
+      }
+      
+      const prevCount = array[index - 1][1];
+      const percentChange = calculatePercentageChange(count, prevCount);
+      
+      return { date, count, percentChange };
+    });
+
+  return result;
 };
 
 // Generate chart data showing updated dates (any content updates)
@@ -519,13 +499,7 @@ export const generateUpdatedChartData = (entries: CollectionProp<EntryProps>): A
     }
     
     const prevCount = array[index - 1].count;
-    let percentChange = 0;
-    
-    if (prevCount > 0) {
-      percentChange = ((month.count - prevCount) / prevCount) * 100;
-    } else if (month.count > 0) {
-      percentChange = 100; // If previous month had 0, and this month has value, show 100% increase
-    }
+    const percentChange = calculatePercentageChange(month.count, prevCount);
     
     return { ...month, percentChange };
   });
