@@ -5,193 +5,11 @@ import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw } from "l
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
-import { WorkflowStageChart } from "@/components/workflow-stage-chart"
-import { getContentStats, generateChartData, generateUpdatedChartData, getContentStatsPaginated, fetchEntriesByType, fetchChartData } from '../../utils/contentful';
-import { Environment, CollectionProp, EntryProps, ReleaseProps, User } from 'contentful-management';
+import { getContentStatsPaginated, fetchEntriesByType, fetchChartData } from '../../utils/contentful';
+import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { AppInstallationParameters } from './ConfigScreen';
-import { calculatePercentageChange, formatPercentageChange } from "../../utils/calculations"
-
-// Sample data for upcoming releases
-const contentData = [
-  { date: "2023-01-01", count: 4 },
-  { date: "2023-02-01", count: 7 },
-  { date: "2023-03-01", count: 5 },
-  { date: "2023-04-01", count: 10 },
-  { date: "2023-05-01", count: 8 },
-  { date: "2023-06-01", count: 12 },
-  { date: "2023-07-01", count: 15 },
-  { date: "2023-08-01", count: 13 },
-  { date: "2023-09-01", count: 18 },
-  { date: "2023-10-01", count: 20 },
-  { date: "2023-11-01", count: 22 },
-  { date: "2023-12-01", count: 25 },
-]
-
-const upcomingReleases = [
-  {
-    id: "r1",
-    title: "Q2 Marketing Campaign Launch",
-    author: "Marketing Team",
-    status: "Scheduled",
-    workflow: "Campaign",
-    stage: "Ready to Launch",
-    date: "2025-04-18",
-  },
-  {
-    id: "r2",
-    title: "New Product Announcement",
-    author: "Product Team",
-    status: "Scheduled",
-    workflow: "Press Release",
-    stage: "Final Approval",
-    date: "2025-04-19",
-  },
-  {
-    id: "r3",
-    title: "Website Redesign Launch",
-    author: "Design Team",
-    status: "Scheduled",
-    workflow: "Website",
-    stage: "Pre-launch Testing",
-    date: "2025-04-21",
-  },
-]
-
-// Sample data with workflow stages
-const upcomingContent = [
-  {
-    id: "1",
-    title: "2024 Industry Trends Report",
-    author: "Alex Johnson",
-    status: "Scheduled",
-    workflow: "Blog Post",
-    stage: "Ready to Publish",
-    date: "2025-04-20",
-  },
-  {
-    id: "2",
-    title: "Product Feature Announcement",
-    author: "Sarah Miller",
-    status: "Scheduled",
-    workflow: "Press Release",
-    stage: "Final Review",
-    date: "2025-04-22",
-  },
-  {
-    id: "3",
-    title: "Customer Success Story: XYZ Corp",
-    author: "Michael Brown",
-    status: "Scheduled",
-    workflow: "Case Study",
-    stage: "Approved",
-    date: "2025-04-25",
-  },
-  {
-    id: "4",
-    title: "Quarterly Newsletter",
-    author: "Emily Davis",
-    status: "Scheduled",
-    workflow: "Newsletter",
-    stage: "Ready to Publish",
-    date: "2025-04-30",
-  },
-  {
-    id: "5",
-    title: "Upcoming Webinar Promotion",
-    author: "David Wilson",
-    status: "Scheduled",
-    workflow: "Social Media",
-    stage: "Scheduled",
-    date: "2025-05-05",
-  },
-]
-
-const recentlyPublishedContent = [
-  {
-    id: "6",
-    title: "How to Optimize Your Content Strategy",
-    author: "Jessica Lee",
-    status: "Published",
-    workflow: "Blog Post",
-    date: "2025-04-15",
-  },
-  {
-    id: "7",
-    title: "New Partnership Announcement",
-    author: "Robert Chen",
-    status: "Published",
-    workflow: "Press Release",
-    date: "2025-04-12",
-  },
-  {
-    id: "8",
-    title: "Product Update: Version 2.5",
-    author: "Thomas Wright",
-    status: "Published",
-    workflow: "Release Notes",
-    date: "2025-04-10",
-  },
-  {
-    id: "9",
-    title: "5 Ways to Improve Team Productivity",
-    author: "Amanda Garcia",
-    status: "Published",
-    workflow: "Blog Post",
-    date: "2025-04-08",
-  },
-  {
-    id: "10",
-    title: "Customer Spotlight: ABC Inc.",
-    author: "Kevin Taylor",
-    status: "Published",
-    workflow: "Case Study",
-    date: "2025-04-05",
-  },
-]
-
-const needsUpdateContent = [
-  {
-    id: "11",
-    title: "Complete Guide to Our Platform",
-    author: "Nicole Adams",
-    status: "Published",
-    workflow: "Documentation",
-    date: "2024-09-15",
-  },
-  {
-    id: "12",
-    title: "Industry Benchmark Report 2024",
-    author: "Brian Johnson",
-    status: "Published",
-    workflow: "White Paper",
-    date: "2024-08-22",
-  },
-  {
-    id: "13",
-    title: "Getting Started Tutorial",
-    author: "Lisa Wang",
-    status: "Published",
-    workflow: "Documentation",
-    date: "2024-07-30",
-  },
-  {
-    id: "14",
-    title: "Pricing and Plans Overview",
-    author: "Mark Robinson",
-    status: "Published",
-    workflow: "Website Content",
-    date: "2024-06-18",
-  },
-  {
-    id: "15",
-    title: "Company History and Mission",
-    author: "Patricia Scott",
-    status: "Published",
-    workflow: "About Page",
-    date: "2024-05-10",
-  },
-]
+import { formatPercentageChange } from "../../utils/calculations"
 
 interface ScheduledRelease {
   id: string;
@@ -205,52 +23,6 @@ interface ScheduledRelease {
 
 interface UserCache {
   [key: string]: string;  // userId -> user's full name
-}
-
-// Update the ContentTable component props to match the new structure
-interface ContentTableProps {
-  data: ScheduledRelease[];
-  showItemCount?: boolean;
-  showUpdatedAt?: boolean;
-  showUpdatedBy?: boolean;
-}
-
-interface AppConfig {
-  excludedContentTypes: string[];
-  needsUpdateMonths: number;
-  recentlyPublishedDays: number;
-}
-
-interface ScheduledAction {
-  sys: {
-    type: string;
-    id: string;
-    status: string;
-    createdAt: string;
-    updatedAt: string;
-  };
-  scheduledFor: {
-    datetime: string;
-    timezone: string;
-  };
-  action: string;
-  entity: {
-    sys: {
-      type: string;
-      linkType: string;
-      id: string;
-    };
-  };
-  release?: {
-    entities: {
-      items: Array<{
-        sys: {
-          id: string;
-          type: string;
-        };
-      }>;
-    };
-  };
 }
 
 interface ContentType {
@@ -658,7 +430,7 @@ const Home = () => {
         // Update all states at once
         setStats(updatedStats);
         setChartData(chartDataFromApi);
-        setUpdatedChartData(contentData);
+        setUpdatedChartData([]);
         setScheduledReleases(releasesData);
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublishedResponse.items);
@@ -907,8 +679,8 @@ const Home = () => {
               </Card>
             </div>
             <ContentChart
-              data={chartData.length > 0 ? chartData : contentData}
-              updatedData={updatedChartData.length > 0 ? updatedChartData : contentData}
+              data={chartData}
+              updatedData={updatedChartData}
               title="Content Trends"
             />
             {/* Upcoming Releases Section */}
@@ -940,16 +712,6 @@ const Home = () => {
               onArchiveEntries={handleArchiveEntries}
               onUnpublishEntries={handleUnpublishEntries}
             />
-
-            {/* <Card>
-              <CardHeader>
-                <CardTitle>Workflow & Stage Distribution</CardTitle>
-                <CardDescription>Content items by workflow and stage</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <WorkflowStageChart />
-              </CardContent>
-            </Card> */}
           </>
         )}
       </main>
