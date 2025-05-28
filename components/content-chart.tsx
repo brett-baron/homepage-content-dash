@@ -95,7 +95,13 @@ export default function ContentChart({
     // Check which data source to use based on content type
     const sourceData = contentType === 'new' ? data : updatedData;
     
-    // Return early only if the selected sourceData is empty
+    // Return early only if both data sources are empty
+    if ((!data || data.length === 0) && (!updatedData || updatedData.length === 0)) {
+      console.log('Both data sources are empty');
+      return;
+    }
+
+    // Return early if the selected data source is empty
     if (!sourceData || sourceData.length === 0) {
       console.log(`Selected data source (${contentType}) is empty`);
       return;

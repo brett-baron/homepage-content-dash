@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
 import { getContentStatsPaginated, fetchEntriesByType, fetchChartData } from '../../utils/contentful';
@@ -429,8 +429,8 @@ const Home = () => {
 
         // Update all states at once
         setStats(updatedStats);
-        setChartData(chartDataFromApi);
-        setUpdatedChartData([]);
+        setChartData(chartDataFromApi.newContent);
+        setUpdatedChartData(chartDataFromApi.updatedContent);
         setScheduledReleases(releasesData);
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublishedResponse.items);

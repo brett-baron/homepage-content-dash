@@ -195,7 +195,10 @@ export const fetchChartData = async (
     monthsToShow?: number;
     excludedContentTypes?: string[];
   } = {}
-): Promise<Array<{ date: string; count: number; percentChange?: number }>> => {
+): Promise<{
+  newContent: Array<{ date: string; count: number; percentChange?: number }>;
+  updatedContent: Array<{ date: string; count: number; percentChange?: number }>;
+}> => {
   const { 
     monthsToShow = 12, // Default to showing 12 months of data
     excludedContentTypes = []
@@ -211,54 +214,85 @@ export const fetchChartData = async (
     ? `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`
     : '';
   
-  // Instead of making a separate API call for each month,
-  // make one call for the entire date range and process the results
-  const response = await cma.entry.getMany({
-    spaceId,
-    environmentId,
-    query: {
-      'sys.firstPublishedAt[gte]': startDate.toISOString(),
-      'sys.publishedAt[exists]': true,
-      limit: 1000,
-      order: 'sys.firstPublishedAt'
-    }
-  });
+  // Make two API calls - one for new content and one for all published content
+  const [newContentResponse, allPublishedResponse] = await Promise.all([
+    // Get entries that were first published in this time range (new content)
+    cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.firstPublishedAt[gte]': startDate.toISOString(),
+        'sys.publishedAt[exists]': true,
+        limit: 1000,
+        order: 'sys.firstPublishedAt'
+      }
+    }),
+    // Get entries that were published (new or updated) in this time range
+    cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.publishedAt[gte]': startDate.toISOString(),
+        'sys.publishedAt[exists]': true,
+        limit: 1000,
+        order: 'sys.publishedAt'
+      }
+    })
+  ]);
 
-  // Create a map to store counts by month
-  const monthCounts: Record<string, number> = {};
+  // Create maps to store counts by month
+  const newContentCounts: Record<string, number> = {};
+  const updatedContentCounts: Record<string, number> = {};
   
   // Initialize all months with zero counts
   let currentMonth = new Date(startDate);
   while (currentMonth <= now) {
     const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
-    monthCounts[monthKey] = 0;
+    newContentCounts[monthKey] = 0;
+    updatedContentCounts[monthKey] = 0;
     currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
 
-  // Count entries by month
-  response.items.forEach((entry: ContentfulEntry) => {
+  // Count new entries by month
+  newContentResponse.items.forEach((entry: ContentfulEntry) => {
     if (entry.sys.firstPublishedAt) {
       const publishDate = new Date(entry.sys.firstPublishedAt);
       const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
-      if (monthCounts[monthKey] !== undefined) {
-        monthCounts[monthKey]++;
+      if (newContentCounts[monthKey] !== undefined) {
+        newContentCounts[monthKey]++;
+      }
+    }
+  });
+
+  // Count all published entries by month (includes both new and updates)
+  allPublishedResponse.items.forEach((entry: ContentfulEntry) => {
+    if (entry.sys.publishedAt) {
+      const publishDate = new Date(entry.sys.publishedAt);
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      if (updatedContentCounts[monthKey] !== undefined) {
+        updatedContentCounts[monthKey]++;
       }
     }
   });
 
   // Convert to array format and calculate percent changes
-  const result = Object.entries(monthCounts)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, count], index, array) => {
-      if (index === 0) {
-        return { date, count, percentChange: 0 };
-      }
-      
-      const prevCount = array[index - 1][1];
-      const percentChange = calculatePercentageChange(count, prevCount);
-      
-      return { date, count, percentChange };
-    });
+  const processMonthCounts = (counts: Record<string, number>) => {
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count], index, array) => {
+        if (index === 0) {
+          return { date, count, percentChange: 0 };
+        }
+        
+        const prevCount = array[index - 1][1];
+        const percentChange = calculatePercentageChange(count, prevCount);
+        
+        return { date, count, percentChange };
+      });
+  };
 
-  return result;
+  return {
+    newContent: processMonthCounts(newContentCounts),
+    updatedContent: processMonthCounts(updatedContentCounts)
+  };
 }; 
