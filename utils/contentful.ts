@@ -387,4 +387,129 @@ export const calculateAverageTimeToPublish = async (
     console.error('Error calculating average time to publish:', error);
     return 0;
   }
-}; 
+};
+
+// Add new function to fetch content type data
+export async function fetchContentTypeChartData(
+  cma: any,
+  spaceId: string,
+  environmentId: string,
+  options: {
+    excludedContentTypes: string[];
+    trackedContentTypes: string[];
+  }
+) {
+  try {
+    const { excludedContentTypes, trackedContentTypes } = options;
+
+    // Get all entries with their publish dates
+    const publishedEntries = await cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.publishedAt[exists]': true,
+        'limit': 1000,
+        'order': 'sys.publishedAt'
+      }
+    });
+
+    // Get all entries with their update dates
+    const updatedEntries = await cma.entry.getMany({
+      spaceId,
+      environmentId,
+      query: {
+        'sys.updatedAt[exists]': true,
+        'limit': 1000,
+        'order': 'sys.updatedAt'
+      }
+    });
+
+    // Process entries by month for both new and updated content
+    const monthlyData: { [key: string]: { [key: string]: number } } = {};
+    const monthlyUpdatedData: { [key: string]: { [key: string]: number } } = {};
+    const contentTypes = new Set<string>();
+
+    // Initialize all months with zero counts
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setMonth(now.getMonth() - 12); // Start from 12 months ago
+    startDate.setDate(1); // Start from first day of month
+
+    let currentMonth = new Date(startDate);
+    while (currentMonth <= now) {
+      const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
+      monthlyData[monthKey] = {};
+      monthlyUpdatedData[monthKey] = {};
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    // Process published entries
+    publishedEntries.items.forEach((entry: any) => {
+      const contentType = entry.sys.contentType.sys.id;
+      if (!excludedContentTypes.includes(contentType) &&
+          (!trackedContentTypes.length || trackedContentTypes.includes(contentType))) {
+        const date = new Date(entry.sys.firstPublishedAt); // Use firstPublishedAt for new content
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+        
+        if (monthlyData[monthKey]) {
+          if (!monthlyData[monthKey][contentType]) {
+            monthlyData[monthKey][contentType] = 0;
+          }
+          monthlyData[monthKey][contentType]++;
+          contentTypes.add(contentType);
+        }
+      }
+    });
+
+    // Process updated entries
+    updatedEntries.items.forEach((entry: any) => {
+      const contentType = entry.sys.contentType.sys.id;
+      if (!excludedContentTypes.includes(contentType) &&
+          (!trackedContentTypes.length || trackedContentTypes.includes(contentType))) {
+        const date = new Date(entry.sys.publishedAt); // Use publishedAt for updated content
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+        
+        if (monthlyUpdatedData[monthKey]) {
+          if (!monthlyUpdatedData[monthKey][contentType]) {
+            monthlyUpdatedData[monthKey][contentType] = 0;
+          }
+          monthlyUpdatedData[monthKey][contentType]++;
+          contentTypes.add(contentType);
+        }
+      }
+    });
+
+    // Convert to array format
+    const sortedMonths = Object.keys(monthlyData).sort();
+    const contentTypeArray = Array.from(contentTypes);
+
+    const contentTypeData = sortedMonths.map(month => {
+      const monthData: { [key: string]: string | number } = { date: month };
+      contentTypeArray.forEach(contentType => {
+        monthData[contentType] = monthlyData[month]?.[contentType] || 0;
+      });
+      return monthData;
+    });
+
+    const contentTypeUpdatedData = sortedMonths.map(month => {
+      const monthData: { [key: string]: string | number } = { date: month };
+      contentTypeArray.forEach(contentType => {
+        monthData[contentType] = monthlyUpdatedData[month]?.[contentType] || 0;
+      });
+      return monthData;
+    });
+
+    return {
+      contentTypeData: contentTypeData as Array<{ date: string; [key: string]: string | number }>,
+      contentTypeUpdatedData: contentTypeUpdatedData as Array<{ date: string; [key: string]: string | number }>,
+      contentTypes: contentTypeArray
+    };
+  } catch (error) {
+    console.error('Error fetching content type chart data:', error);
+    return {
+      contentTypeData: [],
+      contentTypeUpdatedData: [],
+      contentTypes: []
+    };
+  }
+} 

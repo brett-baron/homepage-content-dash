@@ -4,8 +4,8 @@ import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
-import ContentChart from "@/components/content-chart"
-import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish } from '../../utils/contentful';
+import ContentTrendsTabs from "@/components/content-trends-tabs"
+import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish, fetchContentTypeChartData } from '../../utils/contentful';
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { AppInstallationParameters } from './ConfigScreen';
@@ -84,6 +84,8 @@ const Home = () => {
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const loadingTimerRef = useRef<NodeJS.Timeout>();
+
+  const [trackedContentTypes, setTrackedContentTypes] = useState<string[]>([]);
 
   // Start loading timer when loading begins
   useEffect(() => {
@@ -239,6 +241,18 @@ const Home = () => {
   }, [getContentTypes]);
 
   const [timeToPublishDays, setTimeToPublishDays] = useState<number>(30);
+  const [contentTypeChartData, setContentTypeChartData] = useState<{
+    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypes: string[];
+  }>({ contentTypeData: [], contentTypeUpdatedData: [], contentTypes: [] });
+
+  // Add new state for author data
+  const [authorChartData, setAuthorChartData] = useState<{
+    authorData: Array<{ date: string; [key: string]: string | number }>;
+    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    authors: string[];
+  }>({ authorData: [], authorUpdatedData: [], authors: [] });
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -246,12 +260,29 @@ const Home = () => {
         setIsLoading(true);
         setError(null);
         
+        // Get configuration from localStorage
+        const storedConfig = localStorage.getItem('contentDashboardConfig');
+        let configTrackedTypes: string[] = [];
+        
+        if (storedConfig) {
+          try {
+            const parsedConfig = JSON.parse(storedConfig);
+            if (parsedConfig && parsedConfig.trackedContentTypes) {
+              configTrackedTypes = parsedConfig.trackedContentTypes;
+              setTrackedContentTypes(configTrackedTypes);
+            }
+          } catch (e) {
+            console.error('Error parsing stored config:', e);
+          }
+        }
+        
         // Make initial API calls in parallel
         const [
           space,
           environment,
           scheduledActions,
           chartDataFromApi,
+          contentTypeDataFromApi,
           recentlyPublishedResponse,
           needsUpdateResponse,
           orphanedResponse,
@@ -276,6 +307,15 @@ const Home = () => {
             sdk.ids.space,
             sdk.ids.environment,
             { excludedContentTypes }
+          ),
+          fetchContentTypeChartData(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            { 
+              excludedContentTypes,
+              trackedContentTypes: configTrackedTypes
+            }
           ),
           // Recently published content
           fetchEntriesByType(
@@ -463,6 +503,123 @@ const Home = () => {
         setNeedsUpdateContent(needsUpdateResponse.items);
         setOrphanedContent(filteredOrphaned);
         
+        // Update content type chart data
+        setContentTypeChartData({
+          contentTypeData: contentTypeDataFromApi.contentTypeData,
+          contentTypeUpdatedData: contentTypeDataFromApi.contentTypeUpdatedData,
+          contentTypes: contentTypeDataFromApi.contentTypes
+        });
+        
+        // Process author data from recentlyPublishedResponse and needsUpdateResponse
+        const authorData = new Map<string, Map<string, number>>();
+        const authorUpdatedData = new Map<string, Map<string, number>>();
+        const authors = new Set<string>();
+
+        // Helper function to process entries by date and author
+        const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
+          for (const entry of entries) {
+            // For new content: use firstPublishedAt
+            // For updated content: use publishedAt or updatedAt (whichever is more recent)
+            const date = new Date(
+              useUpdateDate 
+                ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0) 
+                  ? entry.sys.publishedAt 
+                  : entry.sys.updatedAt)
+                : (entry.sys.firstPublishedAt || entry.sys.publishedAt)
+            );
+            
+            const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            // Skip if the entry doesn't have the required date
+            if (!date) continue;
+
+            // For new content: use publishedBy (or fall back to createdBy)
+            // For updated content: use updatedBy for updates, publishedBy for new publishes
+            const authorId = useUpdateDate
+              ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0)
+                ? entry.sys.publishedBy?.sys.id
+                : entry.sys.updatedBy?.sys.id)
+              : (entry.sys.publishedBy?.sys.id || entry.sys.createdBy?.sys.id);
+
+            if (!authorId) continue;
+            
+            // Get author name from cache or resolve it
+            let authorName = userCache[authorId];
+            if (!authorName && authorId !== 'Unknown') {
+              authorName = await getUserFullName(authorId);
+            }
+            authorName = authorName || authorId;
+            authors.add(authorName);
+
+            if (!dataMap.has(monthYear)) {
+              dataMap.set(monthYear, new Map());
+            }
+            const monthData = dataMap.get(monthYear)!;
+            monthData.set(authorName, (monthData.get(authorName) || 0) + 1);
+          }
+        };
+
+        // Process entries for both new and updated content
+        // For new content: only count first publications
+        const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
+          .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
+          .sort((a, b) => new Date((a.sys.firstPublishedAt || a.sys.publishedAt)!).getTime() - new Date((b.sys.firstPublishedAt || b.sys.publishedAt)!).getTime());
+
+        await processEntriesByAuthor(publishedEntries, authorData, false);
+
+        // For updated content: count both new publications and updates
+        const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
+          .filter(entry => entry.sys.publishedAt || entry.sys.updatedAt)
+          .sort((a, b) => {
+            const aDate = new Date(Math.max(
+              new Date(a.sys.publishedAt || 0).getTime(),
+              new Date(a.sys.updatedAt || 0).getTime()
+            ));
+            const bDate = new Date(Math.max(
+              new Date(b.sys.publishedAt || 0).getTime(),
+              new Date(b.sys.updatedAt || 0).getTime()
+            ));
+            return aDate.getTime() - bDate.getTime();
+          });
+
+        await processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
+
+        // Convert the Maps to the required format
+        const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
+          // Get all dates in range
+          const now = new Date();
+          const dates = new Set<string>();
+          
+          // Add all months in the last year
+          for (let i = 0; i < 12; i++) {
+            const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            dates.add(monthYear);
+          }
+
+          // Add any existing dates from the data
+          dataMap.forEach((_, date) => dates.add(date));
+
+          // Convert to array and sort
+          return Array.from(dates)
+            .sort()
+            .map(date => ({
+              date,
+              ...Object.fromEntries(
+                Array.from(authors).map(author => [
+                  author,
+                  (dataMap.get(date)?.get(author) || 0)
+                ])
+              )
+            }));
+        };
+
+        setAuthorChartData({
+          authorData: convertMapToChartData(authorData),
+          authorUpdatedData: convertMapToChartData(authorUpdatedData),
+          authors: Array.from(authors)
+        });
+        
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching content stats:', error);
@@ -608,7 +765,7 @@ const Home = () => {
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Content Dashboard</h1>
+          <h1 className="text-4xl font-bold">Content Dashboard</h1>
           <button 
             onClick={() => window.location.reload()}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
@@ -624,7 +781,6 @@ const Home = () => {
             <div className="flex flex-col items-center">
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
               <p className="mt-4 text-muted-foreground">Loading content data...</p>
-              {/* <p className="mt-2 text-sm text-muted-foreground">Time elapsed: {loadingTime}s</p> */}
             </div>
           </div>
         ) : error ? (
@@ -704,11 +860,22 @@ const Home = () => {
                 </CardContent>
               </Card>
             </div>
-            <ContentChart
-              data={chartData}
-              updatedData={updatedChartData}
-              title="Content Trends"
-            />
+
+            {/* Content Publishing Trends Section */}
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Content Publishing Trends</h2>
+              <ContentTrendsTabs
+                chartData={chartData}
+                updatedChartData={updatedChartData}
+                contentTypeData={contentTypeChartData.contentTypeData}
+                contentTypeUpdatedData={contentTypeChartData.contentTypeUpdatedData}
+                contentTypes={contentTypeChartData.contentTypes}
+                authorData={authorChartData.authorData}
+                authorUpdatedData={authorChartData.authorUpdatedData}
+                authors={authorChartData.authors}
+              />
+            </div>
+
             {/* Upcoming Releases Section */}
             {showUpcomingReleases && (
               <div className="flex flex-col gap-2 md:gap-4">
@@ -742,7 +909,7 @@ const Home = () => {
         )}
       </main>
     </div>
-  )
+  );
 };
 
 export default Home;

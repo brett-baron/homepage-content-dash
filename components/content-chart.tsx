@@ -31,12 +31,9 @@ const formatDate = (dateString: string) => {
 interface ContentChartProps {
   data?: Array<{ date: string; count: number; percentChange?: number }>
   updatedData?: Array<{ date: string; count: number; percentChange?: number }>
-  title?: string
-  description?: string
+  selectedTimeRange: 'all' | 'year' | '6months'
+  selectedContentType: 'new' | 'updated'
 }
-
-type TimeRange = 'all' | 'year' | '6months';
-type ContentType = 'new' | 'updated';
 
 // Custom tooltip component to show percentage change
 const CustomTooltip = ({ active, payload, label, contentType }: any) => {
@@ -65,36 +62,13 @@ const CustomTooltip = ({ active, payload, label, contentType }: any) => {
 export default function ContentChart({
   data = [],
   updatedData = [],
-  title,
-  description,
+  selectedTimeRange,
+  selectedContentType,
 }: ContentChartProps) {
-  // Get the default time range from localStorage if available
-  const getDefaultTimeRange = (): TimeRange => {
-    try {
-      const storedConfig = localStorage.getItem('contentDashboardConfig');
-      if (storedConfig) {
-        const parsedConfig = JSON.parse(storedConfig);
-        if (parsedConfig && parsedConfig.defaultTimeRange && 
-            ['all', 'year', '6months'].includes(parsedConfig.defaultTimeRange)) {
-          return parsedConfig.defaultTimeRange as TimeRange;
-        }
-      }
-    } catch (error) {
-      console.error('Error reading default time range from config:', error);
-    }
-    return 'year'; // Fallback to default
-  };
-
-  const [timeRange, setTimeRange] = useState<TimeRange>(getDefaultTimeRange());
-  const [contentType, setContentType] = useState<ContentType>('new');
   const [filteredData, setFilteredData] = useState(data);
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
 
-  // Calculate percent changes for each month
   useEffect(() => {
-    // Check which data source to use based on content type
-    const sourceData = contentType === 'new' ? data : updatedData;
-    
     // Return early only if both data sources are empty
     if ((!data || data.length === 0) && (!updatedData || updatedData.length === 0)) {
       console.log('Both data sources are empty');
@@ -102,15 +76,16 @@ export default function ContentChart({
     }
 
     // Return early if the selected data source is empty
+    const sourceData = selectedContentType === 'new' ? data : updatedData;
     if (!sourceData || sourceData.length === 0) {
-      console.log(`Selected data source (${contentType}) is empty`);
+      console.log(`Selected data source (${selectedContentType}) is empty`);
       return;
     }
 
     const currentDate = new Date();
     
     const filterData = () => {
-      switch (timeRange) {
+      switch (selectedTimeRange) {
         case 'all':
           return [...sourceData];
         case 'year':
@@ -173,48 +148,16 @@ export default function ContentChart({
     } else {
       setYAxisDomain([0, 20]);
     }
-  }, [data, updatedData, timeRange, contentType]);
+  }, [data, updatedData, selectedTimeRange, selectedContentType]);
 
   return (
-    <div className="w-full rounded-xl bg-white p-6 shadow-sm">
-      <div className="mb-6 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-          <Select value={contentType} onValueChange={(value) => setContentType(value as ContentType)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Content type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>View</SelectLabel>
-                <SelectItem value="new">New Content</SelectItem>
-                <SelectItem value="updated">New or Updated</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <p className="text-sm text-gray-500">{description}</p>
-        </div>
-        <Select value={timeRange} onValueChange={(value) => setTimeRange(value as TimeRange)}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Select time range" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectLabel>Time Range</SelectLabel>
-              <SelectItem value="all">All Time</SelectItem>
-              <SelectItem value="year">Past Year</SelectItem>
-              <SelectItem value="6months">Last 6 Months</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="h-[400px]" role="img" aria-label="Line chart showing content publication trends over time">
+    <div className="flex gap-8">
+      <div className="flex-1 h-[400px]" role="img" aria-label="Line chart showing content publication trends over time">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={filteredData}
             margin={{
-              top: 30,
+              top: 10,
               right: 30,
               left: 20,
               bottom: 25,
@@ -229,7 +172,7 @@ export default function ContentChart({
               allowDecimals={false}
             />
             <Tooltip 
-              content={<CustomTooltip contentType={contentType} />}
+              content={<CustomTooltip contentType={selectedContentType} />}
               contentStyle={{
                 borderRadius: "0.5rem",
                 border: "none",
@@ -240,7 +183,7 @@ export default function ContentChart({
             <Line
               type="monotone"
               dataKey="count"
-              name={contentType === 'new' ? "New Content" : "New & Updated Content"}
+              name={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
               stroke="#3b82f6"
               strokeWidth={2}
               dot={{ r: 4, strokeWidth: 2 }}
@@ -257,6 +200,20 @@ export default function ContentChart({
             </Line>
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Legend on the right */}
+      <div className="w-48 flex flex-col gap-3 py-4">
+        <div className="text-sm font-medium text-muted-foreground">Content:</div>
+        <div key="all-entries" className="flex items-center gap-2">
+          <div 
+            className="h-3 w-3 rounded-full" 
+            style={{ backgroundColor: "#3b82f6" }}
+          />
+          <span className="text-sm truncate" title={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}>
+            {selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
+          </span>
+        </div>
       </div>
     </div>
   )

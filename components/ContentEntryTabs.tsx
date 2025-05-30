@@ -29,6 +29,7 @@ interface TransformedEntry {
   isShowMoreRow?: boolean;
   contentType: string;
   needsUpdate?: boolean;
+  age?: number; // Age in days
 }
 
 const getEntryTitle = (entry: EntryProps): string => {
@@ -127,6 +128,8 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
         }
         
         const title = getEntryTitle(entry);
+        const publishDate = entry.sys.publishedAt || entry.sys.createdAt;
+        const age = publishDate ? Math.floor((new Date().getTime() - new Date(publishDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
         
         return {
           id: entry.sys.id,
@@ -135,8 +138,9 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           status: entry.sys.publishedAt ? 'Published' : 'Draft',
           workflow: entry.sys.contentType?.sys.id || 'Unknown',
           stage: entry.sys.publishedVersion ? 'Published' : 'Draft',
-          date: entry.sys.publishedAt || entry.sys.createdAt,
+          date: publishDate,
           contentType: entry.sys.contentType?.sys.id || 'Unknown',
+          age
         };
       }));
       return transformed;
@@ -245,6 +249,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           showStage={false}
           onEntryClick={onOpenEntry}
           hideActions={true}
+          showAge={true}
         />
       </TabsContent>
       <TabsContent value="orphaned" className="space-y-4">
