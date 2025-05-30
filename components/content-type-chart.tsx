@@ -81,6 +81,7 @@ export default function ContentTypeChart({
   const [activeContentTypes, setActiveContentTypes] = useState<string[]>([]);
 
   useEffect(() => {
+    // Select the appropriate data source based on selectedContentType
     const sourceData = selectedContentType === 'new' ? data : updatedData;
     
     if (!sourceData || sourceData.length === 0) {

@@ -151,54 +151,69 @@ export default function ContentChart({
   }, [data, updatedData, selectedTimeRange, selectedContentType]);
 
   return (
-    <div className="h-[400px]" role="img" aria-label="Line chart showing content publication trends over time">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={filteredData}
-          margin={{
-            top: 10,
-            right: 30,
-            left: 20,
-            bottom: 25,
-          }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
-          <YAxis 
-            tick={{ fontSize: 12 }} 
-            domain={yAxisDomain}
-            tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
-            allowDecimals={false}
-          />
-          <Tooltip 
-            content={<CustomTooltip contentType={selectedContentType} />}
-            contentStyle={{
-              borderRadius: "0.5rem",
-              border: "none",
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-              padding: "0.75rem",
+    <div className="flex gap-8">
+      <div className="flex-1 h-[400px]" role="img" aria-label="Line chart showing content publication trends over time">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={filteredData}
+            margin={{
+              top: 10,
+              right: 30,
+              left: 20,
+              bottom: 25,
             }}
-          />
-          <Line
-            type="monotone"
-            dataKey="count"
-            name={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={{ r: 4, strokeWidth: 2 }}
-            activeDot={{ r: 6, strokeWidth: 2 }}
           >
-            <LabelList 
-              dataKey="count" 
-              position="top" 
-              offset={10}
-              className="fill-foreground" 
-              fontSize={15}
-              formatter={(value: number) => value}
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              domain={yAxisDomain}
+              tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
+              allowDecimals={false}
             />
-          </Line>
-        </LineChart>
-      </ResponsiveContainer>
+            <Tooltip 
+              content={<CustomTooltip contentType={selectedContentType} />}
+              contentStyle={{
+                borderRadius: "0.5rem",
+                border: "none",
+                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                padding: "0.75rem",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="count"
+              name={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
+              stroke="#3b82f6"
+              strokeWidth={2}
+              dot={{ r: 4, strokeWidth: 2 }}
+              activeDot={{ r: 6, strokeWidth: 2 }}
+            >
+              <LabelList 
+                dataKey="count" 
+                position="top" 
+                offset={10}
+                className="fill-foreground" 
+                fontSize={15}
+                formatter={(value: number) => value}
+              />
+            </Line>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Legend on the right */}
+      <div className="w-48 flex flex-col gap-3 py-4">
+        <div key="all-entries" className="flex items-center gap-2">
+          <div 
+            className="h-3 w-3 rounded-full" 
+            style={{ backgroundColor: "#3b82f6" }}
+          />
+          <span className="text-sm truncate" title={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}>
+            {selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
+          </span>
+        </div>
+      </div>
     </div>
   )
 }
