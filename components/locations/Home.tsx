@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentChart from "@/components/content-chart"
-import { getContentStatsPaginated, fetchEntriesByType, fetchChartData } from '../../utils/contentful';
+import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish } from '../../utils/contentful';
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { AppInstallationParameters } from './ConfigScreen';
@@ -44,6 +44,14 @@ const cache = {
   contentTypes: new Map<string, CachedData<any>>(),
 };
 
+interface DashboardAppInstallationParameters {
+  excludedContentTypes: string[];
+  needsUpdateMonths: number;
+  recentlyPublishedDays: number;
+  showUpcomingReleases: boolean;
+  timeToPublishDays: number;
+}
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -54,6 +62,7 @@ const Home = () => {
     recentlyPublishedCount: 0,
     needsUpdateCount: 0,
     previousMonthPublished: 0,
+    averageTimeToPublish: 0,
   });
   const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
   const [updatedChartData, setUpdatedChartData] = useState<Array<{ date: string; count: number }>>([]);
@@ -177,7 +186,7 @@ const Home = () => {
       
       if (storedConfig) {
         try {
-          const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
+          const parsedConfig = JSON.parse(storedConfig) as DashboardAppInstallationParameters;
           
           if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
             setExcludedContentTypes(parsedConfig.excludedContentTypes);
@@ -193,6 +202,10 @@ const Home = () => {
           
           if (parsedConfig.showUpcomingReleases !== undefined) {
             setShowUpcomingReleases(parsedConfig.showUpcomingReleases);
+          }
+
+          if (parsedConfig.timeToPublishDays && parsedConfig.timeToPublishDays > 0) {
+            setTimeToPublishDays(parsedConfig.timeToPublishDays);
           }
           
           return;
@@ -216,13 +229,16 @@ const Home = () => {
         excludedContentTypes: defaultExcluded,
         needsUpdateMonths: 6,
         recentlyPublishedDays: 7,
-        showUpcomingReleases: true
+        showUpcomingReleases: true,
+        timeToPublishDays: 30
       }));
     } catch (error) {
       console.error('Error setting up excluded content types:', error);
       setExcludedContentTypes([]);
     }
   }, [getContentTypes]);
+
+  const [timeToPublishDays, setTimeToPublishDays] = useState<number>(30);
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -238,7 +254,8 @@ const Home = () => {
           chartDataFromApi,
           recentlyPublishedResponse,
           needsUpdateResponse,
-          orphanedResponse
+          orphanedResponse,
+          averageTimeToPublish
         ] = await Promise.all([
           cma.space.get({ spaceId: sdk.ids.space }),
           cma.environment.get({
@@ -293,6 +310,14 @@ const Home = () => {
               'limit': 100,
               'order': '-sys.updatedAt'
             }
+          ),
+          // Average time to publish
+          calculateAverageTimeToPublish(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            timeToPublishDays,
+            excludedContentTypes
           )
         ]);
 
@@ -421,10 +446,11 @@ const Home = () => {
         // Calculate total scheduled entries (direct entries + entries in releases)
         const totalScheduledCount = scheduled.length;
 
-        // Update the stats with the correct scheduled count
+        // Update the stats with the correct scheduled count and average time to publish
         const updatedStats = {
           ...contentStats,
-          scheduledCount: totalScheduledCount
+          scheduledCount: totalScheduledCount,
+          averageTimeToPublish
         };
 
         // Update all states at once
@@ -446,7 +472,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes, needsUpdateMonths, recentlyPublishedDays]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -667,14 +693,14 @@ const Home = () => {
               </Card>
               <Card className="w-full relative">
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <GitBranchPlus className="h-8 w-8 text-primary" />
+                  <Timer className="h-8 w-8 text-primary" />
                 </div>
                 <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Orphaned Content</CardTitle>
+                  <CardTitle className="text-sm font-semibold">Average Time to Publish</CardTitle>
                 </CardHeader>
                 <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{orphanedContent.length}</div>
-                  <p className="text-sm text-muted-foreground mt-1">Entries with no references</p>
+                  <div className="text-3xl font-bold">{stats.averageTimeToPublish.toFixed(1)} days</div>
+                  <p className="text-sm text-muted-foreground mt-1">For the last {timeToPublishDays} days</p>
                 </CardContent>
               </Card>
             </div>

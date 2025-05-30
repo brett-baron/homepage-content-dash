@@ -49,7 +49,35 @@ type ContentfulEntry = EntryProps & {
   };
 };
 
-// Optimized function to get content stats using combined API calls
+// Helper function to fetch all pages of data
+async function fetchAllPages<T>(
+  fetchPage: (skip: number, limit: number) => Promise<{ items: T[]; total: number }>,
+  limit: number = 1000
+): Promise<T[]> {
+  const firstPage = await fetchPage(0, limit);
+  const totalItems = firstPage.total;
+  const totalPages = Math.ceil(totalItems / limit);
+  
+  if (totalPages <= 1) {
+    return firstPage.items;
+  }
+
+  // Create array of page promises, starting from page 2 (we already have page 1)
+  const pagePromises = Array.from({ length: totalPages - 1 }, (_, i) => 
+    fetchPage((i + 1) * limit, limit)
+  );
+
+  // Fetch all remaining pages in parallel
+  const remainingPages = await Promise.all(pagePromises);
+  
+  // Combine all items
+  return [
+    ...firstPage.items,
+    ...remainingPages.flatMap(page => page.items)
+  ];
+}
+
+// Update getContentStatsPaginated to use pagination
 export const getContentStatsPaginated = async (
   cma: any,
   spaceId: string,
@@ -74,49 +102,57 @@ export const getContentStatsPaginated = async (
     ? `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`
     : '';
 
-  // Make parallel API calls for different metrics
-  const [totalPublished, monthlyStats, recentAndNeedsUpdate] = await Promise.all([
-    // 1. Get total published count
+  // Create fetch functions for each query
+  const fetchTotalPublished = (skip: number, limit: number) => 
     cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
         'sys.publishedAt[exists]': true,
-        limit: 1
+        skip,
+        limit
       }
-    }),
+    });
 
-    // 2. Combined query for current and previous month stats
+  const fetchMonthlyStats = (skip: number, limit: number) =>
     cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
         'sys.firstPublishedAt[gte]': dates.previousMonth.toISOString(),
         'sys.publishedAt[exists]': true,
-        limit: 1000, // Increased limit to ensure we get all entries for accurate counting
+        skip,
+        limit,
         order: 'sys.firstPublishedAt'
       }
-    }),
+    });
 
-    // 3. Combined query for recently published and needs update
+  const fetchRecentAndNeedsUpdate = (skip: number, limit: number) =>
     cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
         'sys.publishedAt[exists]': true,
-        limit: 1000,
+        skip,
+        limit,
         order: 'sys.publishedAt'
       }
-    })
+    });
+
+  // Make parallel API calls for different metrics with pagination
+  const [totalPublishedResponse, monthlyStatsItems, recentAndNeedsUpdateItems] = await Promise.all([
+    fetchTotalPublished(0, 1), // We only need the total count
+    fetchAllPages(fetchMonthlyStats),
+    fetchAllPages(fetchRecentAndNeedsUpdate)
   ]);
 
   // Process monthly stats
-  const thisMonthPublished = monthlyStats.items.filter((entry: ContentfulEntry) => {
+  const thisMonthPublished = (monthlyStatsItems as ContentfulEntry[]).filter((entry) => {
     const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
     return firstPublishDate >= dates.currentMonth;
   }).length;
 
-  const previousMonthPublished = monthlyStats.items.filter((entry: ContentfulEntry) => {
+  const previousMonthPublished = (monthlyStatsItems as ContentfulEntry[]).filter((entry) => {
     const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
     return firstPublishDate >= dates.previousMonth && firstPublishDate < dates.currentMonth;
   }).length;
@@ -125,17 +161,17 @@ export const getContentStatsPaginated = async (
   const percentChange = calculatePercentageChange(thisMonthPublished, previousMonthPublished);
 
   // Process recent and needs update counts
-  const recentlyPublishedCount = recentAndNeedsUpdate.items.filter((entry: ContentfulEntry) => {
+  const recentlyPublishedCount = (recentAndNeedsUpdateItems as ContentfulEntry[]).filter((entry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
     return publishDate >= dates.recentlyPublished;
   }).length;
 
-  const needsUpdateCount = recentAndNeedsUpdate.items.filter((entry: ContentfulEntry) => {
+  const needsUpdateCount = (recentAndNeedsUpdateItems as ContentfulEntry[]).filter((entry) => {
     const publishDate = new Date(entry.sys.publishedAt!);
     return publishDate <= dates.needsUpdate;
   }).length;
 
-  // Calculate scheduled count from actions
+  // Calculate scheduled count from actions (no pagination needed as limited to 500)
   const scheduledEntryIds = new Set<string>();
   actions?.forEach((action: ScheduledAction) => {
     if (action.sys.status === 'scheduled' && 
@@ -155,7 +191,7 @@ export const getContentStatsPaginated = async (
   });
 
   return {
-    totalPublished: totalPublished.total,
+    totalPublished: totalPublishedResponse.total,
     percentChange,
     scheduledCount: scheduledEntryIds.size,
     recentlyPublishedCount,
@@ -186,7 +222,7 @@ export const fetchEntriesByType = async (
   });
 };
 
-// Fetch chart data directly from the API with filters and configurable time range
+// Update fetchChartData to use pagination
 export const fetchChartData = async (
   cma: any,
   spaceId: string,
@@ -200,44 +236,46 @@ export const fetchChartData = async (
   updatedContent: Array<{ date: string; count: number; percentChange?: number }>;
 }> => {
   const { 
-    monthsToShow = 12, // Default to showing 12 months of data
+    monthsToShow = 12,
     excludedContentTypes = []
   } = options;
 
   const now = new Date();
   const startDate = new Date(now);
   startDate.setMonth(now.getMonth() - monthsToShow + 1);
-  startDate.setDate(1); // First day of the month
-  
-  // Build content type exclusion for queries
-  const contentTypeParams = excludedContentTypes.length > 0
-    ? `&sys.contentType.sys.id[nin]=${excludedContentTypes.join(',')}`
-    : '';
-  
-  // Make two API calls - one for new content and one for all published content
-  const [newContentResponse, allPublishedResponse] = await Promise.all([
-    // Get entries that were first published in this time range (new content)
+  startDate.setDate(1);
+
+  // Create fetch functions for pagination
+  const fetchNewContent = (skip: number, limit: number) =>
     cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
         'sys.firstPublishedAt[gte]': startDate.toISOString(),
         'sys.publishedAt[exists]': true,
-        limit: 1000,
+        skip,
+        limit,
         order: 'sys.firstPublishedAt'
       }
-    }),
-    // Get entries that were published (new or updated) in this time range
+    });
+
+  const fetchAllPublished = (skip: number, limit: number) =>
     cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
         'sys.publishedAt[gte]': startDate.toISOString(),
         'sys.publishedAt[exists]': true,
-        limit: 1000,
+        skip,
+        limit,
         order: 'sys.publishedAt'
       }
-    })
+    });
+
+  // Fetch all pages in parallel
+  const [newContentItems, allPublishedItems] = await Promise.all([
+    fetchAllPages(fetchNewContent),
+    fetchAllPages(fetchAllPublished)
   ]);
 
   // Create maps to store counts by month
@@ -254,7 +292,7 @@ export const fetchChartData = async (
   }
 
   // Count new entries by month
-  newContentResponse.items.forEach((entry: ContentfulEntry) => {
+  (newContentItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.firstPublishedAt) {
       const publishDate = new Date(entry.sys.firstPublishedAt);
       const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
@@ -264,8 +302,8 @@ export const fetchChartData = async (
     }
   });
 
-  // Count all published entries by month (includes both new and updates)
-  allPublishedResponse.items.forEach((entry: ContentfulEntry) => {
+  // Count all published entries by month
+  (allPublishedItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.publishedAt) {
       const publishDate = new Date(entry.sys.publishedAt);
       const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
@@ -275,7 +313,7 @@ export const fetchChartData = async (
     }
   });
 
-  // Convert to array format and calculate percent changes
+  // Process month counts (no changes needed here)
   const processMonthCounts = (counts: Record<string, number>) => {
     return Object.entries(counts)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -295,4 +333,58 @@ export const fetchChartData = async (
     newContent: processMonthCounts(newContentCounts),
     updatedContent: processMonthCounts(updatedContentCounts)
   };
+};
+
+// Update calculateAverageTimeToPublish to use pagination
+export const calculateAverageTimeToPublish = async (
+  cma: any,
+  spaceId: string,
+  environmentId: string,
+  timeToPublishDays: number,
+  excludedContentTypes: string[]
+) => {
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - timeToPublishDays);
+
+    // Create fetch function for pagination
+    const fetchEntries = (skip: number, limit: number) =>
+      cma.entry.getMany({
+        spaceId,
+        environmentId,
+        query: {
+          'sys.firstPublishedAt[exists]': true,
+          'sys.firstPublishedAt[gte]': cutoffDate.toISOString(),
+          skip,
+          limit
+        }
+      });
+
+    // Fetch all pages
+    const entries = await fetchAllPages(fetchEntries);
+
+    if (!entries.length) return 0;
+
+    // Process entries
+    const timeDiffs = (entries as ContentfulEntry[])
+      .filter((entry) => 
+        entry.sys.contentType?.sys?.id && 
+        entry.sys.createdAt && 
+        entry.sys.firstPublishedAt && 
+        !excludedContentTypes.includes(entry.sys.contentType.sys.id)
+      )
+      .map((entry) => {
+        const createdAt = new Date(entry.sys.createdAt).getTime();
+        const firstPublishedAt = new Date(entry.sys.firstPublishedAt!).getTime();
+        return (firstPublishedAt - createdAt) / (1000 * 60 * 60 * 24);
+      });
+
+    if (!timeDiffs.length) return 0;
+
+    const average = timeDiffs.reduce((acc: number, curr: number) => acc + curr, 0) / timeDiffs.length;
+    return average;
+  } catch (error) {
+    console.error('Error calculating average time to publish:', error);
+    return 0;
+  }
 }; 
