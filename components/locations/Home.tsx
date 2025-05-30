@@ -518,14 +518,29 @@ const Home = () => {
         // Helper function to process entries by date and author
         const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
           for (const entry of entries) {
-            // Use publishedAt for new content, updatedAt for updated content
-            const date = new Date(useUpdateDate ? entry.sys.updatedAt : entry.sys.publishedAt || entry.sys.createdAt);
+            // For new content: use firstPublishedAt
+            // For updated content: use publishedAt or updatedAt (whichever is more recent)
+            const date = new Date(
+              useUpdateDate 
+                ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0) 
+                  ? entry.sys.publishedAt 
+                  : entry.sys.updatedAt)
+                : (entry.sys.firstPublishedAt || entry.sys.publishedAt)
+            );
+            
             const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             
             // Skip if the entry doesn't have the required date
             if (!date) continue;
 
-            const authorId = useUpdateDate ? entry.sys.updatedBy?.sys.id : entry.sys.createdBy?.sys.id;
+            // For new content: use publishedBy (or fall back to createdBy)
+            // For updated content: use updatedBy for updates, publishedBy for new publishes
+            const authorId = useUpdateDate
+              ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0)
+                ? entry.sys.publishedBy?.sys.id
+                : entry.sys.updatedBy?.sys.id)
+              : (entry.sys.publishedBy?.sys.id || entry.sys.createdBy?.sys.id);
+
             if (!authorId) continue;
             
             // Get author name from cache or resolve it
@@ -545,17 +560,27 @@ const Home = () => {
         };
 
         // Process entries for both new and updated content
-        // For new content, use all entries with publishedAt dates
+        // For new content: only count first publications
         const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
-          .filter(entry => entry.sys.publishedAt)
-          .sort((a, b) => new Date(a.sys.publishedAt!).getTime() - new Date(b.sys.publishedAt!).getTime());
+          .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
+          .sort((a, b) => new Date((a.sys.firstPublishedAt || a.sys.publishedAt)!).getTime() - new Date((b.sys.firstPublishedAt || b.sys.publishedAt)!).getTime());
 
         await processEntriesByAuthor(publishedEntries, authorData, false);
 
-        // For updated content, use all entries with updatedAt dates
+        // For updated content: count both new publications and updates
         const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
-          .filter(entry => entry.sys.updatedAt)
-          .sort((a, b) => new Date(a.sys.updatedAt!).getTime() - new Date(b.sys.updatedAt!).getTime());
+          .filter(entry => entry.sys.publishedAt || entry.sys.updatedAt)
+          .sort((a, b) => {
+            const aDate = new Date(Math.max(
+              new Date(a.sys.publishedAt || 0).getTime(),
+              new Date(a.sys.updatedAt || 0).getTime()
+            ));
+            const bDate = new Date(Math.max(
+              new Date(b.sys.publishedAt || 0).getTime(),
+              new Date(b.sys.updatedAt || 0).getTime()
+            ));
+            return aDate.getTime() - bDate.getTime();
+          });
 
         await processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
 

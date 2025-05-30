@@ -96,6 +96,7 @@ export default function ContentTrendsTabs({
             contentTypes={contentTypes}
             selectedTimeRange={timeRange}
             selectedContentType={contentView}
+            title="Content Types"
           />
         </TabsContent>
 
@@ -106,6 +107,7 @@ export default function ContentTrendsTabs({
             contentTypes={authors}
             selectedTimeRange={timeRange}
             selectedContentType={contentView}
+            title="Authors"
           />
         </TabsContent>
       </Tabs>

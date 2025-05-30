@@ -30,6 +30,7 @@ interface ContentTypeChartProps {
   contentTypes: string[];
   selectedTimeRange: 'all' | 'year' | '6months';
   selectedContentType: 'new' | 'updated';
+  title?: 'Content Types' | 'Authors';
 }
 
 // Custom tooltip component
@@ -75,6 +76,7 @@ export default function ContentTypeChart({
   contentTypes = [],
   selectedTimeRange,
   selectedContentType,
+  title = 'Content Types'
 }: ContentTypeChartProps) {
   const [filteredData, setFilteredData] = useState(data);
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
@@ -193,6 +195,7 @@ export default function ContentTypeChart({
 
         {/* Legend on the right */}
         <div className="w-48 flex flex-col gap-3 py-4">
+          <div className="text-sm font-medium text-muted-foreground">{title}:</div>
           {activeContentTypes.map((contentType, index) => (
             <div key={contentType} className="flex items-center gap-2">
               <div 

@@ -204,6 +204,7 @@ export default function ContentChart({
 
       {/* Legend on the right */}
       <div className="w-48 flex flex-col gap-3 py-4">
+        <div className="text-sm font-medium text-muted-foreground">Content:</div>
         <div key="all-entries" className="flex items-center gap-2">
           <div 
             className="h-3 w-3 rounded-full" 
