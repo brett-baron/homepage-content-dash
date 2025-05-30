@@ -4,8 +4,8 @@ import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
-import ContentChart from "@/components/content-chart"
-import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish } from '../../utils/contentful';
+import ContentTrendsTabs from "@/components/content-trends-tabs"
+import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish, fetchContentTypeChartData } from '../../utils/contentful';
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { AppInstallationParameters } from './ConfigScreen';
@@ -84,6 +84,8 @@ const Home = () => {
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const loadingTimerRef = useRef<NodeJS.Timeout>();
+
+  const [trackedContentTypes, setTrackedContentTypes] = useState<string[]>([]);
 
   // Start loading timer when loading begins
   useEffect(() => {
@@ -239,6 +241,11 @@ const Home = () => {
   }, [getContentTypes]);
 
   const [timeToPublishDays, setTimeToPublishDays] = useState<number>(30);
+  const [contentTypeChartData, setContentTypeChartData] = useState<{
+    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypes: string[];
+  }>({ contentTypeData: [], contentTypeUpdatedData: [], contentTypes: [] });
 
   useEffect(() => {
     const fetchContentStats = async () => {
@@ -246,12 +253,29 @@ const Home = () => {
         setIsLoading(true);
         setError(null);
         
+        // Get configuration from localStorage
+        const storedConfig = localStorage.getItem('contentDashboardConfig');
+        let configTrackedTypes: string[] = [];
+        
+        if (storedConfig) {
+          try {
+            const parsedConfig = JSON.parse(storedConfig);
+            if (parsedConfig && parsedConfig.trackedContentTypes) {
+              configTrackedTypes = parsedConfig.trackedContentTypes;
+              setTrackedContentTypes(configTrackedTypes);
+            }
+          } catch (e) {
+            console.error('Error parsing stored config:', e);
+          }
+        }
+        
         // Make initial API calls in parallel
         const [
           space,
           environment,
           scheduledActions,
           chartDataFromApi,
+          contentTypeDataFromApi,
           recentlyPublishedResponse,
           needsUpdateResponse,
           orphanedResponse,
@@ -276,6 +300,15 @@ const Home = () => {
             sdk.ids.space,
             sdk.ids.environment,
             { excludedContentTypes }
+          ),
+          fetchContentTypeChartData(
+            cma,
+            sdk.ids.space,
+            sdk.ids.environment,
+            { 
+              excludedContentTypes,
+              trackedContentTypes: configTrackedTypes
+            }
           ),
           // Recently published content
           fetchEntriesByType(
@@ -463,6 +496,13 @@ const Home = () => {
         setNeedsUpdateContent(needsUpdateResponse.items);
         setOrphanedContent(filteredOrphaned);
         
+        // Update content type chart data
+        setContentTypeChartData({
+          contentTypeData: contentTypeDataFromApi.contentTypeData,
+          contentTypeUpdatedData: contentTypeDataFromApi.contentTypeUpdatedData,
+          contentTypes: contentTypeDataFromApi.contentTypes
+        });
+        
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching content stats:', error);
@@ -624,7 +664,6 @@ const Home = () => {
             <div className="flex flex-col items-center">
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
               <p className="mt-4 text-muted-foreground">Loading content data...</p>
-              {/* <p className="mt-2 text-sm text-muted-foreground">Time elapsed: {loadingTime}s</p> */}
             </div>
           </div>
         ) : error ? (
@@ -704,11 +743,15 @@ const Home = () => {
                 </CardContent>
               </Card>
             </div>
-            <ContentChart
-              data={chartData}
-              updatedData={updatedChartData}
-              title="Content Trends"
+
+            <ContentTrendsTabs
+              chartData={chartData}
+              updatedChartData={updatedChartData}
+              contentTypeData={contentTypeChartData.contentTypeData}
+              contentTypeUpdatedData={contentTypeChartData.contentTypeUpdatedData}
+              contentTypes={contentTypeChartData.contentTypes}
             />
+
             {/* Upcoming Releases Section */}
             {showUpcomingReleases && (
               <div className="flex flex-col gap-2 md:gap-4">
@@ -742,7 +785,7 @@ const Home = () => {
         )}
       </main>
     </div>
-  )
+  );
 };
 
 export default Home;

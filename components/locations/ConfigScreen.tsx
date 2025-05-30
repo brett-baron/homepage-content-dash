@@ -7,6 +7,7 @@ import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 
 export interface AppInstallationParameters {
   excludedContentTypes?: string[];
+  trackedContentTypes?: string[];
   needsUpdateMonths?: number;
   defaultTimeRange?: 'all' | 'year' | '6months';
   recentlyPublishedDays?: number;
@@ -16,6 +17,7 @@ export interface AppInstallationParameters {
 const ConfigScreen = () => {
   const [parameters, setParameters] = useState<AppInstallationParameters>({
     excludedContentTypes: [],
+    trackedContentTypes: [],
     needsUpdateMonths: 6,
     defaultTimeRange: 'year',
     recentlyPublishedDays: 7,
@@ -158,6 +160,7 @@ const ConfigScreen = () => {
           // Initialize with defaults if no parameters exist
           setParameters({ 
             excludedContentTypes: [],
+            trackedContentTypes: [],
             needsUpdateMonths: 6,
             defaultTimeRange: 'year',
             recentlyPublishedDays: 7,
@@ -205,6 +208,29 @@ const ConfigScreen = () => {
         return {
           ...prev,
           excludedContentTypes: excludedContentTypes.filter(id => id !== value)
+        };
+      }
+    });
+  };
+
+  const handleTrackedContentTypeSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { checked, value } = event.target;
+    console.log(`Tracked content type selection changed: ${value} - ${checked ? 'checked' : 'unchecked'}`);
+
+    setParameters(prev => {
+      const trackedContentTypes = prev.trackedContentTypes || [];
+
+      if (checked) {
+        // Add to tracked types
+        return {
+          ...prev,
+          trackedContentTypes: [...trackedContentTypes, value]
+        };
+      } else {
+        // Remove from tracked types
+        return {
+          ...prev,
+          trackedContentTypes: trackedContentTypes.filter(id => id !== value)
         };
       }
     });
@@ -329,6 +355,50 @@ const ConfigScreen = () => {
               </Switch>
               <FormControl.HelpText>
                 Toggle visibility of the upcoming releases section on the dashboard.
+              </FormControl.HelpText>
+            </FormControl>
+
+            <FormControl marginBottom="spacingL">
+              <FormControl.Label>Content Types to Track in Publication Trends</FormControl.Label>
+              <Multiselect
+                currentSelection={parameters.trackedContentTypes?.filter(id => 
+                  contentTypes.some(ct => ct.id === id)
+                ) || []}
+                popoverProps={{ 
+                  isFullWidth: true, 
+                  listMaxHeight: 300 
+                }}
+                searchProps={{
+                  searchPlaceholder: 'Search content types...',
+                  onSearchValueChange: handleSearchValueChange
+                }}
+                noMatchesMessage="No content types match your search"
+                placeholder={
+                  parameters.trackedContentTypes && parameters.trackedContentTypes.length > 0
+                    ? (() => {
+                        const validTracked = parameters.trackedContentTypes.filter(id => 
+                          contentTypes.some(ct => ct.id === id)
+                        );
+                        return validTracked.length > 0
+                          ? `${validTracked.length} content type(s) tracked`
+                          : 'Select content types to track';
+                      })()
+                    : 'Select content types to track'
+                }
+              >
+                {filteredContentTypes.map(contentType => (
+                  <Multiselect.Option
+                    key={`track-${contentType.id}`}
+                    itemId={`track-${contentType.id}`}
+                    value={contentType.id}
+                    label={`${contentType.name} (${contentType.id})`}
+                    onSelectItem={handleTrackedContentTypeSelection}
+                    isChecked={(parameters.trackedContentTypes || []).includes(contentType.id)}
+                  />
+                ))}
+              </Multiselect>
+              <FormControl.HelpText>
+                Select content types to display in the publication trends chart. If none are selected, all content types will be shown.
               </FormControl.HelpText>
             </FormControl>
 
