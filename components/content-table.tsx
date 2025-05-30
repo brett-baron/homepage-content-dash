@@ -39,18 +39,19 @@ import { ArchiveIcon, RotateCcw } from "lucide-react";
 interface ContentItem {
   id: string
   title: string | React.ReactNode
-  author?: string
+  author: string
   status: string
-  workflow?: string | React.ReactNode
-  stage?: string
-  date?: string
+  workflow: string
+  stage: string
+  date: string
   isShowMoreRow?: boolean
-  needsUpdate?: boolean
   fieldStatus?: {
-    '*': {
-      [locale: string]: 'draft' | 'published' | 'changed'
+    [key: string]: string | {
+      [locale: string]: string;
     }
   } | null
+  needsUpdate?: boolean
+  age?: number
 }
 
 interface EntryStatus {
@@ -91,6 +92,7 @@ interface ContentTableProps {
   isOrphanedContent?: boolean
   onArchiveEntries?: (entryIds: string[]) => Promise<void>
   onUnpublishEntries?: (entryIds: string[]) => Promise<void>
+  showAge?: boolean
 }
 
 const formatDateTime = (dateTimeStr: string) => {
@@ -122,7 +124,8 @@ const mapCMAEntryToContentItem = (entry: any): ContentItem => {
     stage: entry.sys.publishedVersion ? 'Published' : 'Draft',
     date: entry.sys.publishedAt || entry.sys.updatedAt,
     fieldStatus: entry.sys.fieldStatus || null,
-    needsUpdate: false
+    needsUpdate: false,
+    age: entry.sys.age
   };
 };
 
@@ -213,7 +216,8 @@ export function ContentTable({
   hideActions = false,
   isOrphanedContent = false,
   onArchiveEntries,
-  onUnpublishEntries
+  onUnpublishEntries,
+  showAge = false
 }: ContentTableProps) {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -697,6 +701,7 @@ export function ContentTable({
                   <TableHead>Author</TableHead>
                   {showStage && <TableHead>Status</TableHead>}
                   <TableHead>Content Type</TableHead>
+                  {showAge && <TableHead>Age</TableHead>}
                   <TableHead>Published Date</TableHead>
                 </>
               )}
@@ -789,6 +794,7 @@ export function ContentTable({
                           </TableCell>
                         )}
                         <TableCell>{(item as ContentItem).workflow}</TableCell>
+                        {showAge && <TableCell>{(item as ContentItem).age} days</TableCell>}
                         <TableCell>{formatDate((item as ContentItem).date)}</TableCell>
                       </>
                     )
