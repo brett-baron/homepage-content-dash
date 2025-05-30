@@ -247,6 +247,13 @@ const Home = () => {
     contentTypes: string[];
   }>({ contentTypeData: [], contentTypeUpdatedData: [], contentTypes: [] });
 
+  // Add new state for author data
+  const [authorChartData, setAuthorChartData] = useState<{
+    authorData: Array<{ date: string; [key: string]: string | number }>;
+    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    authors: string[];
+  }>({ authorData: [], authorUpdatedData: [], authors: [] });
+
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
@@ -503,6 +510,91 @@ const Home = () => {
           contentTypes: contentTypeDataFromApi.contentTypes
         });
         
+        // Process author data from recentlyPublishedResponse and needsUpdateResponse
+        const authorData = new Map<string, Map<string, number>>();
+        const authorUpdatedData = new Map<string, Map<string, number>>();
+        const authors = new Set<string>();
+
+        // Helper function to process entries by date and author
+        const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
+          for (const entry of entries) {
+            // Use publishedAt for new content, updatedAt for updated content
+            const date = new Date(useUpdateDate ? entry.sys.updatedAt : entry.sys.publishedAt || entry.sys.createdAt);
+            const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            // Skip if the entry doesn't have the required date
+            if (!date) continue;
+
+            const authorId = useUpdateDate ? entry.sys.updatedBy?.sys.id : entry.sys.createdBy?.sys.id;
+            if (!authorId) continue;
+            
+            // Get author name from cache or resolve it
+            let authorName = userCache[authorId];
+            if (!authorName && authorId !== 'Unknown') {
+              authorName = await getUserFullName(authorId);
+            }
+            authorName = authorName || authorId;
+            authors.add(authorName);
+
+            if (!dataMap.has(monthYear)) {
+              dataMap.set(monthYear, new Map());
+            }
+            const monthData = dataMap.get(monthYear)!;
+            monthData.set(authorName, (monthData.get(authorName) || 0) + 1);
+          }
+        };
+
+        // Process entries for both new and updated content
+        // For new content, use all entries with publishedAt dates
+        const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
+          .filter(entry => entry.sys.publishedAt)
+          .sort((a, b) => new Date(a.sys.publishedAt!).getTime() - new Date(b.sys.publishedAt!).getTime());
+
+        await processEntriesByAuthor(publishedEntries, authorData, false);
+
+        // For updated content, use all entries with updatedAt dates
+        const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
+          .filter(entry => entry.sys.updatedAt)
+          .sort((a, b) => new Date(a.sys.updatedAt!).getTime() - new Date(b.sys.updatedAt!).getTime());
+
+        await processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
+
+        // Convert the Maps to the required format
+        const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
+          // Get all dates in range
+          const now = new Date();
+          const dates = new Set<string>();
+          
+          // Add all months in the last year
+          for (let i = 0; i < 12; i++) {
+            const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            dates.add(monthYear);
+          }
+
+          // Add any existing dates from the data
+          dataMap.forEach((_, date) => dates.add(date));
+
+          // Convert to array and sort
+          return Array.from(dates)
+            .sort()
+            .map(date => ({
+              date,
+              ...Object.fromEntries(
+                Array.from(authors).map(author => [
+                  author,
+                  (dataMap.get(date)?.get(author) || 0)
+                ])
+              )
+            }));
+        };
+
+        setAuthorChartData({
+          authorData: convertMapToChartData(authorData),
+          authorUpdatedData: convertMapToChartData(authorUpdatedData),
+          authors: Array.from(authors)
+        });
+        
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching content stats:', error);
@@ -648,7 +740,7 @@ const Home = () => {
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Content Dashboard</h1>
+          <h1 className="text-4xl font-bold">Content Dashboard</h1>
           <button 
             onClick={() => window.location.reload()}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
@@ -744,13 +836,20 @@ const Home = () => {
               </Card>
             </div>
 
-            <ContentTrendsTabs
-              chartData={chartData}
-              updatedChartData={updatedChartData}
-              contentTypeData={contentTypeChartData.contentTypeData}
-              contentTypeUpdatedData={contentTypeChartData.contentTypeUpdatedData}
-              contentTypes={contentTypeChartData.contentTypes}
-            />
+            {/* Content Publishing Trends Section */}
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-semibold">Content Publishing Trends</h2>
+              <ContentTrendsTabs
+                chartData={chartData}
+                updatedChartData={updatedChartData}
+                contentTypeData={contentTypeChartData.contentTypeData}
+                contentTypeUpdatedData={contentTypeChartData.contentTypeUpdatedData}
+                contentTypes={contentTypeChartData.contentTypes}
+                authorData={authorChartData.authorData}
+                authorUpdatedData={authorChartData.authorUpdatedData}
+                authors={authorChartData.authors}
+              />
+            </div>
 
             {/* Upcoming Releases Section */}
             {showUpcomingReleases && (

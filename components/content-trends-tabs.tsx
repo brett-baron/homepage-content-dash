@@ -21,6 +21,9 @@ interface ContentTrendsTabsProps {
   contentTypeData: Array<{ date: string; [key: string]: string | number }>;
   contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
   contentTypes: string[];
+  authorData: Array<{ date: string; [key: string]: string | number }>;
+  authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+  authors: string[];
 }
 
 export default function ContentTrendsTabs({
@@ -28,7 +31,10 @@ export default function ContentTrendsTabs({
   updatedChartData,
   contentTypeData,
   contentTypeUpdatedData,
-  contentTypes
+  contentTypes,
+  authorData,
+  authorUpdatedData,
+  authors
 }: ContentTrendsTabsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('year');
   const [contentView, setContentView] = useState<ContentType>('new');
@@ -40,6 +46,7 @@ export default function ContentTrendsTabs({
           <TabsList className="bg-muted h-10">
             <TabsTrigger value="overall">Overall Trends</TabsTrigger>
             <TabsTrigger value="by-type">By Content Type</TabsTrigger>
+            <TabsTrigger value="by-author">By Author</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-4">
             {/* Content type selector - shown for both tabs */}
@@ -87,6 +94,16 @@ export default function ContentTrendsTabs({
             data={contentTypeData}
             updatedData={contentTypeUpdatedData}
             contentTypes={contentTypes}
+            selectedTimeRange={timeRange}
+            selectedContentType={contentView}
+          />
+        </TabsContent>
+
+        <TabsContent value="by-author" className="mt-0">
+          <ContentTypeChart
+            data={authorData}
+            updatedData={authorUpdatedData}
+            contentTypes={authors}
             selectedTimeRange={timeRange}
             selectedContentType={contentView}
           />

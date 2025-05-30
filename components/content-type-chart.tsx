@@ -153,53 +153,55 @@ export default function ContentTypeChart({
 
   return (
     <>
-      <div className="h-[400px]" role="img" aria-label="Line chart showing content type trends over time">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={filteredData}
-            margin={{
-              top: 10,
-              right: 30,
-              left: 20,
-              bottom: 25,
-            }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
-            <YAxis 
-              tick={{ fontSize: 12 }} 
-              domain={yAxisDomain}
-              tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
-              allowDecimals={false}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            {activeContentTypes.map((contentType, index) => (
-              <Line
-                key={contentType}
-                type="monotone"
-                dataKey={contentType}
-                name={contentType}
-                stroke={lineColors[index % lineColors.length]}
-                strokeWidth={2}
-                dot={{ r: 4, strokeWidth: 2 }}
-                activeDot={{ r: 6, strokeWidth: 2 }}
+      <div className="flex gap-8">
+        <div className="flex-1 h-[400px]" role="img" aria-label="Line chart showing content type trends over time">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={filteredData}
+              margin={{
+                top: 10,
+                right: 30,
+                left: 20,
+                bottom: 25,
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
+              <YAxis 
+                tick={{ fontSize: 12 }} 
+                domain={yAxisDomain}
+                tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
+                allowDecimals={false}
               />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+              <Tooltip content={<CustomTooltip />} />
+              {activeContentTypes.map((contentType, index) => (
+                <Line
+                  key={contentType}
+                  type="monotone"
+                  dataKey={contentType}
+                  name={contentType}
+                  stroke={lineColors[index % lineColors.length]}
+                  strokeWidth={2}
+                  dot={{ r: 4, strokeWidth: 2 }}
+                  activeDot={{ r: 6, strokeWidth: 2 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
 
-      {/* Custom legend */}
-      <div className="mt-4 flex flex-wrap gap-4 text-sm">
-        {activeContentTypes.map((contentType, index) => (
-          <div key={contentType} className="flex items-center gap-2">
-            <div 
-              className="h-3 w-3 rounded-full" 
-              style={{ backgroundColor: lineColors[index % lineColors.length] }}
-            />
-            <span>{contentType}</span>
-          </div>
-        ))}
+        {/* Legend on the right */}
+        <div className="w-48 flex flex-col gap-3 py-4">
+          {activeContentTypes.map((contentType, index) => (
+            <div key={contentType} className="flex items-center gap-2">
+              <div 
+                className="h-3 w-3 rounded-full" 
+                style={{ backgroundColor: lineColors[index % lineColors.length] }}
+              />
+              <span className="text-sm truncate" title={contentType}>{contentType}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </>
   );
