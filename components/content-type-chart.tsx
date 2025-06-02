@@ -176,87 +176,85 @@ export default function ContentTypeChart({
   }, [data, updatedData, selectedTimeRange, selectedContentType, contentTypes]);
 
   return (
-    <>
-      <div className="flex gap-8">
-        <div className="flex-1 h-[400px]" role="img" aria-label="Line chart showing content type trends over time">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={processedData}
-              margin={{
-                top: 20,
-                right: 30,
-                left: 20,
-                bottom: 25,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
-              <YAxis 
-                tick={{ fontSize: 12 }} 
-                domain={yAxisDomain}
-                tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
-                allowDecimals={false}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              {activeContentTypes.map((contentType, index) => (
-                <Line
-                  key={contentType}
-                  type="monotone"
+    <div className="flex gap-8">
+      <div className="flex-1 h-[400px]" role="img" aria-label="Line chart showing content type trends over time">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={processedData}
+            margin={{
+              top: 10,
+              right: 30,
+              left: 20,
+              bottom: 25,
+            }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} angle={-45} textAnchor="end" />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              domain={yAxisDomain}
+              tickCount={Math.min(5, Math.floor(yAxisDomain[1] / 10) + 1)}
+              allowDecimals={false}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            {activeContentTypes.map((contentType, index) => (
+              <Line
+                key={contentType}
+                type="monotone"
+                dataKey={contentType}
+                name={contentType}
+                stroke={lineColors[index % lineColors.length]}
+                strokeWidth={2}
+                dot={{ r: 4, strokeWidth: 2 }}
+                activeDot={{ r: 6, strokeWidth: 2 }}
+              >
+                <LabelList
                   dataKey={contentType}
-                  name={contentType}
-                  stroke={lineColors[index % lineColors.length]}
-                  strokeWidth={2}
-                  dot={{ r: 4, strokeWidth: 2 }}
-                  activeDot={{ r: 6, strokeWidth: 2 }}
-                >
-                  <LabelList
-                    dataKey={contentType}
-                    position="top"
-                    offset={10}
-                    content={(props: LabelProps) => {
-                      const { x, y, value, index } = props;
-                      
-                      if (typeof index !== 'number' || !processedData[index] || processedData[index].highestType !== contentType) {
-                        return null;
-                      }
+                  position="top"
+                  offset={10}
+                  content={(props: LabelProps) => {
+                    const { x, y, value, index } = props;
+                    
+                    if (typeof index !== 'number' || !processedData[index] || processedData[index].highestType !== contentType) {
+                      return null;
+                    }
 
-                      const xPos = typeof x === 'number' ? x : parseFloat(x || '0');
-                      const yPos = typeof y === 'number' ? y : parseFloat(y || '0');
-                      const val = typeof value === 'number' ? value : parseFloat(value || '0');
+                    const xPos = typeof x === 'number' ? x : parseFloat(x || '0');
+                    const yPos = typeof y === 'number' ? y : parseFloat(y || '0');
+                    const val = typeof value === 'number' ? value : parseFloat(value || '0');
 
-                      return (
-                        <text 
-                          x={xPos} 
-                          y={yPos - 10}
-                          textAnchor="middle"
-                          fill="#374151"
-                          fontSize="15"
-                        >
-                          {val}
-                        </text>
-                      );
-                    }}
-                  />
-                </Line>
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Legend on the right */}
-        <div className="w-48 flex flex-col gap-3 py-4">
-          <div className="text-sm font-medium text-muted-foreground">{title}:</div>
-          {activeContentTypes.map((contentType, index) => (
-            <div key={contentType} className="flex items-center gap-2">
-              <div 
-                className="h-3 w-3 rounded-full" 
-                style={{ backgroundColor: lineColors[index % lineColors.length] }}
-              />
-              <span className="text-sm truncate" title={contentType}>{contentType}</span>
-            </div>
-          ))}
-        </div>
+                    return (
+                      <text 
+                        x={xPos} 
+                        y={yPos - 10}
+                        textAnchor="middle"
+                        fill="#374151"
+                        fontSize="15"
+                      >
+                        {val}
+                      </text>
+                    );
+                  }}
+                />
+              </Line>
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
       </div>
-    </>
+
+      {/* Legend on the right */}
+      <div className="w-48 flex flex-col gap-3 py-4">
+        <div className="text-sm font-medium text-muted-foreground">{title}:</div>
+        {activeContentTypes.map((contentType, index) => (
+          <div key={contentType} className="flex items-center gap-2">
+            <div 
+              className="h-3 w-3 rounded-full" 
+              style={{ backgroundColor: lineColors[index % lineColors.length] }}
+            />
+            <span className="text-sm truncate" title={contentType}>{contentType}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 } 
