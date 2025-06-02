@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts"
 import { useState, useEffect } from "react"
 import { calculatePercentageChange, formatPercentageChange } from "../utils/calculations"
 import {
@@ -70,6 +70,14 @@ const lineColors = [
   "#84cc16", // lime-500
 ];
 
+// Import the correct type from recharts
+type LabelProps = {
+  x?: string | number;
+  y?: string | number;
+  value?: string | number;
+  index?: number;
+};
+
 export default function ContentTypeChart({
   data = [],
   updatedData = [],
@@ -81,6 +89,7 @@ export default function ContentTypeChart({
   const [filteredData, setFilteredData] = useState(data);
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
   const [activeContentTypes, setActiveContentTypes] = useState<string[]>([]);
+  const [processedData, setProcessedData] = useState<Array<{ date: string; [key: string]: any; highestType?: string }>>([]);
 
   useEffect(() => {
     // Select the appropriate data source based on selectedContentType
@@ -117,13 +126,25 @@ export default function ContentTypeChart({
     };
 
     const filtered = filterData();
-    setFilteredData(filtered);
     
     // Find content types that have non-zero values in the filtered data
     const activeTypes = contentTypes.filter(type => 
       filtered.some(item => Number(item[type]) > 0)
     );
     setActiveContentTypes(activeTypes);
+
+    // Process data to identify highest value for each date
+    const processed = filtered.map(item => {
+      const values = activeTypes.map(type => ({ type, value: Number(item[type]) || 0 }));
+      const highest = values.reduce((max, curr) => curr.value > max.value ? curr : max, { type: '', value: -1 });
+      return {
+        ...item,
+        highestType: highest.type,
+        highestValue: highest.value
+      };
+    });
+    setProcessedData(processed);
+    setFilteredData(filtered);
     
     // Calculate appropriate y-axis range using only active content types
     if (filtered.length > 0) {
@@ -160,9 +181,9 @@ export default function ContentTypeChart({
         <div className="flex-1 h-[400px]" role="img" aria-label="Line chart showing content type trends over time">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              data={filteredData}
+              data={processedData}
               margin={{
-                top: 10,
+                top: 20,
                 right: 30,
                 left: 20,
                 bottom: 25,
@@ -187,7 +208,36 @@ export default function ContentTypeChart({
                   strokeWidth={2}
                   dot={{ r: 4, strokeWidth: 2 }}
                   activeDot={{ r: 6, strokeWidth: 2 }}
-                />
+                >
+                  <LabelList
+                    dataKey={contentType}
+                    position="top"
+                    offset={10}
+                    content={(props: LabelProps) => {
+                      const { x, y, value, index } = props;
+                      
+                      if (typeof index !== 'number' || !processedData[index] || processedData[index].highestType !== contentType) {
+                        return null;
+                      }
+
+                      const xPos = typeof x === 'number' ? x : parseFloat(x || '0');
+                      const yPos = typeof y === 'number' ? y : parseFloat(y || '0');
+                      const val = typeof value === 'number' ? value : parseFloat(value || '0');
+
+                      return (
+                        <text 
+                          x={xPos} 
+                          y={yPos - 10}
+                          textAnchor="middle"
+                          fill="#374151"
+                          fontSize="15"
+                        >
+                          {val}
+                        </text>
+                      );
+                    }}
+                  />
+                </Line>
               ))}
             </LineChart>
           </ResponsiveContainer>

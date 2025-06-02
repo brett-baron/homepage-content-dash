@@ -196,6 +196,10 @@ export default function ContentChart({
                 className="fill-foreground" 
                 fontSize={15}
                 formatter={(value: number) => value}
+                style={{
+                  fill: "#374151",
+                  fontSize: "15px",
+                }}
               />
             </Line>
           </LineChart>
