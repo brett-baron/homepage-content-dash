@@ -73,7 +73,6 @@ const Home = () => {
   const [scheduledContent, setScheduledContent] = useState<EntryProps[]>([]);
   const [recentlyPublishedContent, setRecentlyPublishedContent] = useState<EntryProps[]>([]);
   const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
-  const [orphanedContent, setOrphanedContent] = useState<EntryProps[]>([]);
   const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
   const [needsUpdateMonths, setNeedsUpdateMonths] = useState<number>(6);
   const [recentlyPublishedDays, setRecentlyPublishedDays] = useState<number>(7);
@@ -285,7 +284,6 @@ const Home = () => {
           contentTypeDataFromApi,
           recentlyPublishedResponse,
           needsUpdateResponse,
-          orphanedResponse,
           averageTimeToPublish
         ] = await Promise.all([
           cma.space.get({ spaceId: sdk.ids.space }),
@@ -338,17 +336,6 @@ const Home = () => {
               'sys.updatedAt[lte]': new Date(Date.now() - needsUpdateMonths * 30 * 24 * 60 * 60 * 1000).toISOString(),
               'order': 'sys.updatedAt',
               'limit': 100
-            }
-          ),
-          // Orphaned content
-          fetchEntriesByType(
-            cma,
-            sdk.ids.space,
-            sdk.ids.environment,
-            {
-              'sys.publishedAt[exists]': true,
-              'limit': 100,
-              'order': '-sys.updatedAt'
             }
           ),
           // Average time to publish
@@ -466,12 +453,6 @@ const Home = () => {
           scheduled = batchResults.flatMap(result => result.items);
         }
 
-        // Filter orphaned content
-        const filteredOrphaned = orphanedResponse.items.filter((entry: EntryProps) => 
-          !(entry.sys.contentType && 
-            excludedContentTypes.includes(entry.sys.contentType.sys.id))
-        );
-
         // Get content stats after we have all the scheduled actions processed
         const contentStats = await getContentStatsPaginated(
           cma,
@@ -501,7 +482,6 @@ const Home = () => {
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublishedResponse.items);
         setNeedsUpdateContent(needsUpdateResponse.items);
-        setOrphanedContent(filteredOrphaned);
         
         // Update content type chart data
         setContentTypeChartData({
@@ -675,92 +655,6 @@ const Home = () => {
     window.open(url, '_blank');
   };
 
-  // Handle archiving entries
-  const handleArchiveEntries = async (entryIds: string[]) => {
-    if (!entryIds.length) return;
-    
-    setIsLoading(true);
-    try {
-      // Archive each entry
-      for (const entryId of entryIds) {
-        try {
-          // First fetch the entry to get its version
-          const entry = await cma.entry.get({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment,
-            entryId
-          });
-          
-          // Then archive it
-          await cma.entry.archive({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment,
-            entryId,
-          });
-        } catch (error) {
-          console.error(`Error archiving entry ${entryId}:`, error);
-          // Continue with other entries even if one fails
-        }
-      }
-      
-      // Update orphaned content state by removing archived entries
-      setOrphanedContent(prev => prev.filter(entry => !entryIds.includes(entry.sys.id)));
-      
-      // Show success notification
-      sdk.notifier.success(`Successfully archived ${entryIds.length} ${entryIds.length === 1 ? 'entry' : 'entries'}`);
-    } catch (error) {
-      console.error('Error archiving entries:', error);
-      sdk.notifier.error('Some entries could not be archived. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Handle unpublishing entries
-  const handleUnpublishEntries = async (entryIds: string[]) => {
-    if (!entryIds.length) return;
-    
-    setIsLoading(true);
-    try {
-      // Unpublish each entry
-      for (const entryId of entryIds) {
-        try {
-          // Unpublish the entry
-          await cma.entry.unpublish({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment,
-            entryId
-          });
-        } catch (error) {
-          console.error(`Error unpublishing entry ${entryId}:`, error);
-          // Continue with other entries even if one fails
-        }
-      }
-      
-      // Update orphaned content state by updating the unpublished entries' status
-      setOrphanedContent(prev => prev.map(entry => {
-        if (entryIds.includes(entry.sys.id)) {
-          return {
-            ...entry,
-            sys: {
-              ...entry.sys,
-              publishedVersion: undefined
-            }
-          };
-        }
-        return entry;
-      }));
-      
-      // Show success notification
-      sdk.notifier.success(`Successfully unpublished ${entryIds.length} ${entryIds.length === 1 ? 'entry' : 'entries'}`);
-    } catch (error) {
-      console.error('Error unpublishing entries:', error);
-      sdk.notifier.error('Some entries could not be unpublished. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -896,14 +790,11 @@ const Home = () => {
               scheduledContent={scheduledContent}
               recentlyPublishedContent={recentlyPublishedContent}
               needsUpdateContent={needsUpdateContent}
-              orphanedContent={orphanedContent}
               userCache={userCache}
               onResolveUser={getUserFullName}
               onOpenEntry={handleOpenEntry}
               needsUpdateMonths={needsUpdateMonths}
               recentlyPublishedDays={recentlyPublishedDays}
-              onArchiveEntries={handleArchiveEntries}
-              onUnpublishEntries={handleUnpublishEntries}
             />
           </>
         )}
