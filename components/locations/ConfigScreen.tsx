@@ -1,27 +1,27 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { ConfigAppSDK } from '@contentful/app-sdk';
-import { Heading, Form, Paragraph, Flex, FormControl, Note, Spinner, Select, Switch } from '@contentful/f36-components';
+import { Heading, Form, Flex, FormControl, Spinner, Select, Switch } from '@contentful/f36-components';
 import { Multiselect } from '@contentful/f36-multiselect';
 import { css } from 'emotion';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
 
 export interface AppInstallationParameters {
-  excludedContentTypes?: string[];
   trackedContentTypes?: string[];
   needsUpdateMonths?: number;
   defaultTimeRange?: 'all' | 'year' | '6months';
   recentlyPublishedDays?: number;
   showUpcomingReleases?: boolean;
+  timeToPublishDays?: number;
 }
 
 const ConfigScreen = () => {
   const [parameters, setParameters] = useState<AppInstallationParameters>({
-    excludedContentTypes: [],
     trackedContentTypes: [],
     needsUpdateMonths: 6,
     defaultTimeRange: 'year',
     recentlyPublishedDays: 7,
-    showUpcomingReleases: true
+    showUpcomingReleases: true,
+    timeToPublishDays: 30
   });
   const [contentTypes, setContentTypes] = useState<Array<{ id: string; name: string }>>([]);
   const [filteredContentTypes, setFilteredContentTypes] = useState<Array<{ id: string; name: string }>>([]);
@@ -61,7 +61,7 @@ const ConfigScreen = () => {
     (async () => {
       setIsLoading(true);
       try {
-        // Get content types to populate the exclusion list
+        // Get content types to populate the tracking list
         const contentTypesResponse = await cma.contentType.getMany({
           spaceId: sdk.ids.space,
           environmentId: sdk.ids.environment
@@ -87,38 +87,25 @@ const ConfigScreen = () => {
               console.log('Config from localStorage:', parsedConfig);
               
               // Filter out content types that don't exist
-              if (parsedConfig.excludedContentTypes) {
-                const validExcludedTypes = parsedConfig.excludedContentTypes.filter(id => 
+              if (parsedConfig.trackedContentTypes) {
+                const validTrackedTypes = parsedConfig.trackedContentTypes.filter(id => 
                   sortedContentTypes.some(ct => ct.id === id)
                 );
                 
-                if (validExcludedTypes.length !== parsedConfig.excludedContentTypes.length) {
-                  console.warn('Some excluded content types were filtered out because they do not exist:', 
-                    parsedConfig.excludedContentTypes.filter(id => !sortedContentTypes.some(ct => ct.id === id))
+                if (validTrackedTypes.length !== parsedConfig.trackedContentTypes.length) {
+                  console.warn('Some tracked content types were filtered out because they do not exist:', 
+                    parsedConfig.trackedContentTypes.filter(id => !sortedContentTypes.some(ct => ct.id === id))
                   );
-                  parsedConfig.excludedContentTypes = validExcludedTypes;
+                  parsedConfig.trackedContentTypes = validTrackedTypes;
                 }
               }
               
-              // Ensure we have a valid needsUpdateMonths
-              if (!parsedConfig.needsUpdateMonths || parsedConfig.needsUpdateMonths < 1) {
-                parsedConfig.needsUpdateMonths = 6; // Default to 6 months
-              }
-              
-              // Ensure we have a valid defaultTimeRange
-              if (!parsedConfig.defaultTimeRange || !['all', 'year', '6months'].includes(parsedConfig.defaultTimeRange)) {
-                parsedConfig.defaultTimeRange = 'year'; // Default to year
-              }
-              
-              // Ensure we have a valid recentlyPublishedDays
-              if (!parsedConfig.recentlyPublishedDays || parsedConfig.recentlyPublishedDays < 1) {
-                parsedConfig.recentlyPublishedDays = 7; // Default to 7 days
-              }
-              
-              // Ensure default showUpcomingReleases if not set
-              if (parsedConfig.showUpcomingReleases === undefined) {
-                parsedConfig.showUpcomingReleases = true;
-              }
+              // Ensure we have valid values or defaults
+              parsedConfig.needsUpdateMonths = parsedConfig.needsUpdateMonths || 6;
+              parsedConfig.defaultTimeRange = parsedConfig.defaultTimeRange || 'year';
+              parsedConfig.recentlyPublishedDays = parsedConfig.recentlyPublishedDays || 7;
+              parsedConfig.showUpcomingReleases = parsedConfig.showUpcomingReleases ?? true;
+              parsedConfig.timeToPublishDays = parsedConfig.timeToPublishDays || 30;
               
               setParameters(parsedConfig);
               console.log('Loaded and filtered configuration from localStorage:', parsedConfig);
@@ -135,44 +122,29 @@ const ConfigScreen = () => {
         const currentParameters: AppInstallationParameters | null = await sdk.app.getParameters();
 
         if (currentParameters) {
-          // Ensure default needsUpdateMonths if not set
-          if (!currentParameters.needsUpdateMonths) {
-            currentParameters.needsUpdateMonths = 6;
-          }
-
-          // Ensure default defaultTimeRange if not set
-          if (!currentParameters.defaultTimeRange) {
-            currentParameters.defaultTimeRange = 'year';
-          }
-          
-          // Ensure default recentlyPublishedDays if not set
-          if (!currentParameters.recentlyPublishedDays) {
-            currentParameters.recentlyPublishedDays = 7;
-          }
-          
-          // Ensure default showUpcomingReleases if not set
-          if (currentParameters.showUpcomingReleases === undefined) {
-            currentParameters.showUpcomingReleases = true;
-          }
+          // Ensure default values if not set
+          currentParameters.needsUpdateMonths = currentParameters.needsUpdateMonths || 6;
+          currentParameters.defaultTimeRange = currentParameters.defaultTimeRange || 'year';
+          currentParameters.recentlyPublishedDays = currentParameters.recentlyPublishedDays || 7;
+          currentParameters.showUpcomingReleases = currentParameters.showUpcomingReleases ?? true;
+          currentParameters.timeToPublishDays = currentParameters.timeToPublishDays || 30;
           
           setParameters(currentParameters);
         } else {
           // Initialize with defaults if no parameters exist
           setParameters({ 
-            excludedContentTypes: [],
             trackedContentTypes: [],
             needsUpdateMonths: 6,
             defaultTimeRange: 'year',
             recentlyPublishedDays: 7,
-            showUpcomingReleases: true
+            showUpcomingReleases: true,
+            timeToPublishDays: 30
           });
         }
       } catch (error) {
         console.error('Error loading content types:', error);
       } finally {
         setIsLoading(false);
-        // Once preparation has finished, call `setReady` to hide
-        // the loading screen and present the app to a user.
         sdk.app.setReady();
       }
     })();
@@ -188,29 +160,6 @@ const ConfigScreen = () => {
       );
       setFilteredContentTypes(filtered);
     }
-  };
-
-  const handleContentTypeSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { checked, value } = event.target;
-    console.log(`Content type selection changed: ${value} - ${checked ? 'checked' : 'unchecked'}`);
-
-    setParameters(prev => {
-      const excludedContentTypes = prev.excludedContentTypes || [];
-
-      if (checked) {
-        // Add to excluded types
-        return {
-          ...prev,
-          excludedContentTypes: [...excludedContentTypes, value]
-        };
-      } else {
-        // Remove from excluded types
-        return {
-          ...prev,
-          excludedContentTypes: excludedContentTypes.filter(id => id !== value)
-        };
-      }
-    });
   };
 
   const handleTrackedContentTypeSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -272,6 +221,16 @@ const ConfigScreen = () => {
     setParameters(prev => ({
       ...prev,
       showUpcomingReleases: checked
+    }));
+  };
+
+  const handleTimeToPublishDaysChange = (value: string) => {
+    const days = parseInt(value, 10);
+    console.log(`Time to publish days changed to: ${days}`);
+    
+    setParameters(prev => ({
+      ...prev,
+      timeToPublishDays: days
     }));
   };
 
@@ -345,6 +304,25 @@ const ConfigScreen = () => {
             </FormControl>
 
             <FormControl marginBottom="spacingL">
+              <FormControl.Label>Time to Publish Threshold</FormControl.Label>
+              <Select
+                id="time-to-publish-days"
+                name="time-to-publish-days"
+                value={parameters.timeToPublishDays?.toString() || "30"}
+                onChange={(e) => handleTimeToPublishDaysChange(e.target.value)}
+              >
+                <Select.Option value="7">7 days</Select.Option>
+                <Select.Option value="14">14 days</Select.Option>
+                <Select.Option value="30">30 days</Select.Option>
+                <Select.Option value="60">60 days</Select.Option>
+                <Select.Option value="90">90 days</Select.Option>
+              </Select>
+              <FormControl.HelpText>
+                The time period to calculate average time to publish metrics.
+              </FormControl.HelpText>
+            </FormControl>
+
+            <FormControl marginBottom="spacingL">
               <Switch
                 id="show-upcoming-releases"
                 name="show-upcoming-releases"
@@ -399,50 +377,6 @@ const ConfigScreen = () => {
               </Multiselect>
               <FormControl.HelpText>
                 Select content types to display in the publication trends chart. If none are selected, all content types will be shown.
-              </FormControl.HelpText>
-            </FormControl>
-
-            <FormControl>
-              <FormControl.Label>Content Types to Exclude from Orphaned Entries</FormControl.Label>
-              <Multiselect
-                currentSelection={parameters.excludedContentTypes?.filter(id => 
-                  contentTypes.some(ct => ct.id === id)
-                ) || []}
-                popoverProps={{ 
-                  isFullWidth: true, 
-                  listMaxHeight: 300 
-                }}
-                searchProps={{
-                  searchPlaceholder: 'Search content types...',
-                  onSearchValueChange: handleSearchValueChange
-                }}
-                noMatchesMessage="No content types match your search"
-                placeholder={
-                  parameters.excludedContentTypes && parameters.excludedContentTypes.length > 0
-                    ? (() => {
-                        const validExcluded = parameters.excludedContentTypes.filter(id => 
-                          contentTypes.some(ct => ct.id === id)
-                        );
-                        return validExcluded.length > 0
-                          ? `${validExcluded.length} content type(s) excluded`
-                          : 'Select content types to exclude';
-                      })()
-                    : 'Select content types to exclude'
-                }
-              >
-                {filteredContentTypes.map(contentType => (
-                  <Multiselect.Option
-                    key={contentType.id}
-                    itemId={`exclude-${contentType.id}`}
-                    value={contentType.id}
-                    label={`${contentType.name} (${contentType.id})`}
-                    onSelectItem={handleContentTypeSelection}
-                    isChecked={(parameters.excludedContentTypes || []).includes(contentType.id)}
-                  />
-                ))}
-              </Multiselect>
-              <FormControl.HelpText>
-                Select content types that should not appear in the orphaned content detection.
               </FormControl.HelpText>
             </FormControl>
           </>
