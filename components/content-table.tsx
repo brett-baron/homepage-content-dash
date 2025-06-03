@@ -89,9 +89,6 @@ interface ContentTableProps {
   onCancel?: (releaseId: string) => Promise<void>
   onEntryClick?: (entryId: string) => void
   hideActions?: boolean
-  isOrphanedContent?: boolean
-  onArchiveEntries?: (entryIds: string[]) => Promise<void>
-  onUnpublishEntries?: (entryIds: string[]) => Promise<void>
   showAge?: boolean
 }
 
@@ -214,9 +211,6 @@ export function ContentTable({
   onCancel,
   onEntryClick,
   hideActions = false,
-  isOrphanedContent = false,
-  onArchiveEntries,
-  onUnpublishEntries,
   showAge = false
 }: ContentTableProps) {
   const sdk = useSDK<HomeAppSDK>();
@@ -228,12 +222,6 @@ export function ContentTable({
   const [selectedTime, setSelectedTime] = useState("12:00 PM");
   const [selectedTimezone, setSelectedTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [isLoading, setIsLoading] = useState(false);
-  
-  // New states for selection
-  const [selectedRows, setSelectedRows] = useState<{[key: string]: boolean}>({});
-  const [selectAll, setSelectAll] = useState(false);
-  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
-  const [isUnpublishDialogOpen, setIsUnpublishDialogOpen] = useState(false);
 
   // Check if the data is ScheduledRelease[]
   const isScheduledReleaseData = data.length > 0 && 'scheduledDateTime' in data[0];
@@ -287,105 +275,6 @@ export function ContentTable({
                new Date((b as ScheduledRelease).scheduledDateTime).getTime();
       })
     : enrichedData;
-
-  // Reset selection when data changes
-  useEffect(() => {
-    setSelectedRows({});
-    setSelectAll(false);
-  }, [data]);
-
-  // Calculate number of selected rows
-  const selectedCount = useMemo(() => {
-    return Object.values(selectedRows).filter(Boolean).length;
-  }, [selectedRows]);
-
-  // Handle "Select All" checkbox
-  const handleSelectAll = (checked: boolean) => {
-    setSelectAll(checked);
-    
-    // Only select non-showMoreRow items
-    const newSelectedRows: {[key: string]: boolean} = {};
-    sortedData.forEach(item => {
-      if (!item.isShowMoreRow) {
-        newSelectedRows[item.id] = checked;
-      }
-    });
-    
-    setSelectedRows(newSelectedRows);
-  };
-
-  // Handle individual row selection
-  const handleSelectRow = (id: string, checked: boolean) => {
-    setSelectedRows(prev => ({
-      ...prev,
-      [id]: checked
-    }));
-    
-    // Update selectAll state based on selection
-    const actualItems = sortedData.filter(item => !item.isShowMoreRow);
-    const newSelectedRows = {
-      ...selectedRows,
-      [id]: checked
-    };
-    
-    // Check if all actual items are now selected
-    const allSelected = actualItems.every(item => 
-      newSelectedRows[item.id] === true
-    );
-    
-    setSelectAll(allSelected);
-  };
-
-  // Get array of selected entry IDs
-  const getSelectedEntryIds = (): string[] => {
-    return Object.entries(selectedRows)
-      .filter(([_, isSelected]) => isSelected)
-      .map(([id]) => id);
-  };
-
-  // Archive selected entries
-  const handleArchiveEntries = async () => {
-    const entryIds = getSelectedEntryIds();
-    if (entryIds.length === 0) return;
-    
-    setIsLoading(true);
-    try {
-      if (onArchiveEntries) {
-        await onArchiveEntries(entryIds);
-      }
-      // Reset selection after successful operation
-      setSelectedRows({});
-      setSelectAll(false);
-    } catch (error) {
-      console.error('Error archiving entries:', error);
-      sdk.notifier.error('Failed to archive selected entries. Please try again.');
-    } finally {
-      setIsLoading(false);
-      setIsArchiveDialogOpen(false);
-    }
-  };
-
-  // Unpublish selected entries
-  const handleUnpublishEntries = async () => {
-    const entryIds = getSelectedEntryIds();
-    if (entryIds.length === 0) return;
-    
-    setIsLoading(true);
-    try {
-      if (onUnpublishEntries) {
-        await onUnpublishEntries(entryIds);
-      }
-      // Reset selection after successful operation
-      setSelectedRows({});
-      setSelectAll(false);
-    } catch (error) {
-      console.error('Error unpublishing entries:', error);
-      sdk.notifier.error('Failed to unpublish selected entries. Please try again.');
-    } finally {
-      setIsLoading(false);
-      setIsUnpublishDialogOpen(false);
-    }
-  };
 
   const handleViewRelease = (release: ScheduledRelease) => {
     const baseUrl = 'https://launch.contentful.com';
@@ -603,31 +492,6 @@ export function ContentTable({
     }
   };
 
-  // Add effect to fetch and log full entry data for each item
-  useEffect(() => {
-    const fetchEntryDetails = async () => {
-      if (!isScheduledReleaseData) {
-        for (const item of data) {
-          try {
-            const contentItem = item as ContentItem;
-            const entry = await cma.entry.get({
-              entryId: contentItem.id,
-              spaceId: sdk.ids.space,
-              environmentId: sdk.ids.environment
-            });
-          } catch (error) {
-            console.error('Error fetching entry details:', {
-              entryId: (item as ContentItem).id,
-              error
-            });
-          }
-        }
-      }
-    };
-
-    fetchEntryDetails();
-  }, [data, cma, sdk.ids.space, sdk.ids.environment, isScheduledReleaseData]);
-
   return (
     <>
       <Card>
@@ -642,51 +506,9 @@ export function ContentTable({
           </Box>
         )}
 
-        {/* Action Buttons for Orphaned Content */}
-        {isOrphanedContent && (
-          <Box padding="spacingS" paddingBottom="spacingM">
-            <Flex justifyContent="space-between" alignItems="center">
-              <Text className="text-sm">
-                {selectedCount} of {sortedData.filter(item => !item.isShowMoreRow).length} entries selected
-              </Text>
-              <Flex gap="spacingS">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  disabled={selectedCount === 0 || isLoading}
-                  onClick={() => setIsUnpublishDialogOpen(true)}
-                  className="opacity-90 hover:opacity-100 transition-opacity"
-                >
-                  <RotateCcw size={16} className="mr-1" />
-                  Unpublish Selected
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  disabled={selectedCount === 0 || isLoading}
-                  onClick={() => setIsArchiveDialogOpen(true)}
-                  className="opacity-90 hover:opacity-100 transition-opacity"
-                >
-                  <ArchiveIcon size={16} className="mr-1" />
-                  Archive Selected
-                </Button>
-              </Flex>
-            </Flex>
-          </Box>
-        )}
-
         <Table>
           <TableHeader>
             <TableRow>
-              {isOrphanedContent && (
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={selectAll}
-                    onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                    aria-label="Select all rows"
-                  />
-                </TableHead>
-              )}
               <TableHead>Title</TableHead>
               {isScheduledReleaseData ? (
                 <>
@@ -711,15 +533,8 @@ export function ContentTable({
           <TableBody>
             {sortedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isOrphanedContent ? 6 : 5} className="h-24 text-center">
-                  {isOrphanedContent ? (
-                    <div className="flex flex-col items-center space-y-2">
-                      <p className="font-medium">No orphaned entries found</p>
-                      <p className="text-sm text-muted-foreground">All your content is properly referenced by other entries.</p>
-                    </div>
-                  ) : (
-                    "No entries found."
-                  )}
+                <TableCell colSpan={5} className="h-24 text-center">
+                  No entries found.
                 </TableCell>
               </TableRow>
             ) : (
@@ -727,20 +542,7 @@ export function ContentTable({
                 <TableRow 
                   key={item.id}
                   className={item.isShowMoreRow ? 'hover:bg-transparent border-0' : undefined}
-                  data-state={selectedRows[item.id] ? "selected" : undefined}
                 >
-                  {isOrphanedContent && !item.isShowMoreRow && (
-                    <TableCell className="w-12">
-                      <Checkbox
-                        checked={!!selectedRows[item.id]}
-                        onCheckedChange={(checked) => handleSelectRow(item.id, !!checked)}
-                        aria-label={`Select ${item.title}`}
-                      />
-                    </TableCell>
-                  )}
-                  {isOrphanedContent && item.isShowMoreRow && (
-                    <TableCell />
-                  )}
                   <TableCell colSpan={item.isShowMoreRow ? (isScheduledReleaseData ? 6 : 5) : undefined}>
                     {item.isShowMoreRow ? (
                       item.title
@@ -827,34 +629,6 @@ export function ContentTable({
                         ) : (
                           <Menu.List>
                             <Menu.Item onClick={() => onEntryClick && onEntryClick(item.id)}>Edit</Menu.Item>
-                            {isOrphanedContent && (
-                              <>
-                                <Menu.Item 
-                                  onClick={() => {
-                                    setSelectedRows({[item.id]: true});
-                                    setIsUnpublishDialogOpen(true);
-                                  }}
-                                  isDisabled={isLoading}
-                                >
-                                  <Flex alignItems="center" gap="spacingXs">
-                                    <RotateCcw size={14} />
-                                    <span>Unpublish</span>
-                                  </Flex>
-                                </Menu.Item>
-                                <Menu.Item 
-                                  onClick={() => {
-                                    setSelectedRows({[item.id]: true});
-                                    setIsArchiveDialogOpen(true);
-                                  }}
-                                  isDisabled={isLoading}
-                                >
-                                  <Flex alignItems="center" gap="spacingXs">
-                                    <ArchiveIcon size={14} />
-                                    <span>Archive</span>
-                                  </Flex>
-                                </Menu.Item>
-                              </>
-                            )}
                           </Menu.List>
                         )}
                       </Menu>
@@ -1010,89 +784,6 @@ export function ContentTable({
           </Box>
         )}
       </Modal>
-
-      {/* ShadCN UI Dialogs for Archive and Unpublish */}
-      <Dialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader className="space-y-4">
-            <DialogTitle className="text-xl">Archive {selectedCount === 1 ? 'Entry' : 'Entries'}</DialogTitle>
-            <DialogDescription className="mt-4 text-sm">
-              {selectedCount === 1 
-                ? "Are you sure you want to archive this entry? It will be moved to the archive and no longer accessible in the content model."
-                : `Are you sure you want to archive ${selectedCount} entries? They will be moved to the archive and no longer accessible in the content model.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex sm:justify-end gap-2 mt-5">
-            <Button
-              variant="outline"
-              onClick={() => setIsArchiveDialogOpen(false)}
-              disabled={isLoading}
-              className="sm:w-auto"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleArchiveEntries}
-              disabled={isLoading}
-              className="sm:w-auto gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
-                  <span>Archiving...</span>
-                </>
-              ) : (
-                <>
-                  <ArchiveIcon size={16} />
-                  <span>Archive {selectedCount === 1 ? 'Entry' : 'Entries'}</span>
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isUnpublishDialogOpen} onOpenChange={setIsUnpublishDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader className="space-y-4">
-            <DialogTitle className="text-xl">Unpublish {selectedCount === 1 ? 'Entry' : 'Entries'}</DialogTitle>
-            <DialogDescription className="mt- text-sm">
-              {selectedCount === 1 
-                ? "Are you sure you want to unpublish this entry? It will be removed from your published content but kept as a draft."
-                : `Are you sure you want to unpublish ${selectedCount} entries? They will be removed from your published content but kept as drafts.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex sm:justify-end gap-2 mt-5">
-            <Button
-              variant="outline"
-              onClick={() => setIsUnpublishDialogOpen(false)}
-              disabled={isLoading}
-              className="sm:w-auto"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="default"
-              onClick={handleUnpublishEntries}
-              disabled={isLoading}
-              className="sm:w-auto gap-2 bg-blue-600 hover:bg-blue-700"
-            >
-              {isLoading ? (
-                <>
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
-                  <span>Unpublishing...</span>
-                </>
-              ) : (
-                <>
-                  <RotateCcw size={16} />
-                  <span>Unpublish {selectedCount === 1 ? 'Entry' : 'Entries'}</span>
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   )
 }

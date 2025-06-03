@@ -8,7 +8,6 @@ import ContentTrendsTabs from "@/components/content-trends-tabs"
 import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish, fetchContentTypeChartData } from '../../utils/contentful';
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
-import { AppInstallationParameters } from './ConfigScreen';
 import { formatPercentageChange } from "../../utils/calculations"
 
 interface ScheduledRelease {
@@ -45,8 +44,9 @@ const cache = {
 };
 
 interface DashboardAppInstallationParameters {
-  excludedContentTypes: string[];
+  trackedContentTypes: string[];
   needsUpdateMonths: number;
+  defaultTimeRange: 'all' | 'year' | '6months';
   recentlyPublishedDays: number;
   showUpcomingReleases: boolean;
   timeToPublishDays: number;
@@ -73,19 +73,57 @@ const Home = () => {
   const [scheduledContent, setScheduledContent] = useState<EntryProps[]>([]);
   const [recentlyPublishedContent, setRecentlyPublishedContent] = useState<EntryProps[]>([]);
   const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
-  const [orphanedContent, setOrphanedContent] = useState<EntryProps[]>([]);
-  const [excludedContentTypes, setExcludedContentTypes] = useState<string[]>([]);
+  const [trackedContentTypes, setTrackedContentTypes] = useState<string[]>([]);
   const [needsUpdateMonths, setNeedsUpdateMonths] = useState<number>(6);
   const [recentlyPublishedDays, setRecentlyPublishedDays] = useState<number>(7);
   const [showUpcomingReleases, setShowUpcomingReleases] = useState<boolean>(true);
+  const [timeToPublishDays, setTimeToPublishDays] = useState<number>(30);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  
+  const [defaultTimeRange, setDefaultTimeRange] = useState<'all' | 'year' | '6months'>('year');
+
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const loadingTimerRef = useRef<NodeJS.Timeout>();
 
-  const [trackedContentTypes, setTrackedContentTypes] = useState<string[]>([]);
+  // Effect to load app installation parameters
+  useEffect(() => {
+    const loadAppParameters = async () => {
+      try {
+        // Try to get parameters from localStorage first
+        const storedConfig = localStorage.getItem('contentDashboardConfig');
+        if (storedConfig) {
+          const parsedConfig = JSON.parse(storedConfig) as DashboardAppInstallationParameters;
+          setTrackedContentTypes(parsedConfig.trackedContentTypes || []);
+          setNeedsUpdateMonths(parsedConfig.needsUpdateMonths || 6);
+          setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays || 7);
+          setShowUpcomingReleases(parsedConfig.showUpcomingReleases ?? true);
+          setTimeToPublishDays(parsedConfig.timeToPublishDays || 30);
+          setDefaultTimeRange(parsedConfig.defaultTimeRange || 'year');
+          return;
+        }
+
+        // If not in localStorage, use default values
+        setTrackedContentTypes([]);
+        setNeedsUpdateMonths(6);
+        setRecentlyPublishedDays(7);
+        setShowUpcomingReleases(true);
+        setTimeToPublishDays(30);
+        setDefaultTimeRange('year');
+      } catch (error) {
+        console.error('Error loading app parameters:', error);
+        // Use defaults if loading fails
+        setTrackedContentTypes([]);
+        setNeedsUpdateMonths(6);
+        setRecentlyPublishedDays(7);
+        setShowUpcomingReleases(true);
+        setTimeToPublishDays(30);
+        setDefaultTimeRange('year');
+      }
+    };
+
+    loadAppParameters();
+  }, []);
 
   // Start loading timer when loading begins
   useEffect(() => {
@@ -190,8 +228,8 @@ const Home = () => {
         try {
           const parsedConfig = JSON.parse(storedConfig) as DashboardAppInstallationParameters;
           
-          if (parsedConfig.excludedContentTypes && Array.isArray(parsedConfig.excludedContentTypes)) {
-            setExcludedContentTypes(parsedConfig.excludedContentTypes);
+          if (parsedConfig.trackedContentTypes && Array.isArray(parsedConfig.trackedContentTypes)) {
+            setTrackedContentTypes(parsedConfig.trackedContentTypes);
           }
           
           if (parsedConfig.needsUpdateMonths && parsedConfig.needsUpdateMonths > 0) {
@@ -220,27 +258,27 @@ const Home = () => {
       const contentTypesResponse = await getContentTypes();
       const availableContentTypeIds = contentTypesResponse.items.map((ct: ContentType) => ct.sys.id);
       
-      const defaultExcludedBase = ['page', 'settings', 'navigation', 'siteConfig'];
-      const defaultExcluded = defaultExcludedBase.filter(id => 
+      const defaultTrackedBase = ['page', 'settings', 'navigation', 'siteConfig'];
+      const defaultTracked = defaultTrackedBase.filter(id => 
         availableContentTypeIds.includes(id)
       );
       
-      setExcludedContentTypes(defaultExcluded);
+      setTrackedContentTypes(defaultTracked);
       
       localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
-        excludedContentTypes: defaultExcluded,
+        trackedContentTypes: defaultTracked,
         needsUpdateMonths: 6,
         recentlyPublishedDays: 7,
         showUpcomingReleases: true,
-        timeToPublishDays: 30
+        timeToPublishDays: 30,
+        defaultTimeRange: 'year'
       }));
     } catch (error) {
-      console.error('Error setting up excluded content types:', error);
-      setExcludedContentTypes([]);
+      console.error('Error setting up tracked content types:', error);
+      setTrackedContentTypes([]);
     }
   }, [getContentTypes]);
 
-  const [timeToPublishDays, setTimeToPublishDays] = useState<number>(30);
   const [contentTypeChartData, setContentTypeChartData] = useState<{
     contentTypeData: Array<{ date: string; [key: string]: string | number }>;
     contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
@@ -260,22 +298,6 @@ const Home = () => {
         setIsLoading(true);
         setError(null);
         
-        // Get configuration from localStorage
-        const storedConfig = localStorage.getItem('contentDashboardConfig');
-        let configTrackedTypes: string[] = [];
-        
-        if (storedConfig) {
-          try {
-            const parsedConfig = JSON.parse(storedConfig);
-            if (parsedConfig && parsedConfig.trackedContentTypes) {
-              configTrackedTypes = parsedConfig.trackedContentTypes;
-              setTrackedContentTypes(configTrackedTypes);
-            }
-          } catch (e) {
-            console.error('Error parsing stored config:', e);
-          }
-        }
-        
         // Make initial API calls in parallel
         const [
           space,
@@ -285,7 +307,6 @@ const Home = () => {
           contentTypeDataFromApi,
           recentlyPublishedResponse,
           needsUpdateResponse,
-          orphanedResponse,
           averageTimeToPublish
         ] = await Promise.all([
           cma.space.get({ spaceId: sdk.ids.space }),
@@ -306,15 +327,15 @@ const Home = () => {
             cma,
             sdk.ids.space,
             sdk.ids.environment,
-            { excludedContentTypes }
+            { monthsToShow: 12 }
           ),
           fetchContentTypeChartData(
             cma,
             sdk.ids.space,
             sdk.ids.environment,
             { 
-              excludedContentTypes,
-              trackedContentTypes: configTrackedTypes
+              trackedContentTypes,
+              monthsToShow: 12
             }
           ),
           // Recently published content
@@ -340,24 +361,12 @@ const Home = () => {
               'limit': 100
             }
           ),
-          // Orphaned content
-          fetchEntriesByType(
-            cma,
-            sdk.ids.space,
-            sdk.ids.environment,
-            {
-              'sys.publishedAt[exists]': true,
-              'limit': 100,
-              'order': '-sys.updatedAt'
-            }
-          ),
           // Average time to publish
           calculateAverageTimeToPublish(
             cma,
             sdk.ids.space,
             sdk.ids.environment,
-            timeToPublishDays,
-            excludedContentTypes
+            timeToPublishDays
           )
         ]);
 
@@ -466,12 +475,6 @@ const Home = () => {
           scheduled = batchResults.flatMap(result => result.items);
         }
 
-        // Filter orphaned content
-        const filteredOrphaned = orphanedResponse.items.filter((entry: EntryProps) => 
-          !(entry.sys.contentType && 
-            excludedContentTypes.includes(entry.sys.contentType.sys.id))
-        );
-
         // Get content stats after we have all the scheduled actions processed
         const contentStats = await getContentStatsPaginated(
           cma,
@@ -480,7 +483,7 @@ const Home = () => {
           scheduledActions.items,
           recentlyPublishedDays,
           needsUpdateMonths,
-          excludedContentTypes
+          trackedContentTypes
         );
 
         // Calculate total scheduled entries (direct entries + entries in releases)
@@ -501,7 +504,6 @@ const Home = () => {
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublishedResponse.items);
         setNeedsUpdateContent(needsUpdateResponse.items);
-        setOrphanedContent(filteredOrphaned);
         
         // Update content type chart data
         setContentTypeChartData({
@@ -629,7 +631,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, excludedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -673,92 +675,6 @@ const Home = () => {
     
     // Open the entry in a new tab
     window.open(url, '_blank');
-  };
-
-  // Handle archiving entries
-  const handleArchiveEntries = async (entryIds: string[]) => {
-    if (!entryIds.length) return;
-    
-    setIsLoading(true);
-    try {
-      // Archive each entry
-      for (const entryId of entryIds) {
-        try {
-          // First fetch the entry to get its version
-          const entry = await cma.entry.get({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment,
-            entryId
-          });
-          
-          // Then archive it
-          await cma.entry.archive({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment,
-            entryId,
-          });
-        } catch (error) {
-          console.error(`Error archiving entry ${entryId}:`, error);
-          // Continue with other entries even if one fails
-        }
-      }
-      
-      // Update orphaned content state by removing archived entries
-      setOrphanedContent(prev => prev.filter(entry => !entryIds.includes(entry.sys.id)));
-      
-      // Show success notification
-      sdk.notifier.success(`Successfully archived ${entryIds.length} ${entryIds.length === 1 ? 'entry' : 'entries'}`);
-    } catch (error) {
-      console.error('Error archiving entries:', error);
-      sdk.notifier.error('Some entries could not be archived. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Handle unpublishing entries
-  const handleUnpublishEntries = async (entryIds: string[]) => {
-    if (!entryIds.length) return;
-    
-    setIsLoading(true);
-    try {
-      // Unpublish each entry
-      for (const entryId of entryIds) {
-        try {
-          // Unpublish the entry
-          await cma.entry.unpublish({
-            spaceId: sdk.ids.space,
-            environmentId: sdk.ids.environment,
-            entryId
-          });
-        } catch (error) {
-          console.error(`Error unpublishing entry ${entryId}:`, error);
-          // Continue with other entries even if one fails
-        }
-      }
-      
-      // Update orphaned content state by updating the unpublished entries' status
-      setOrphanedContent(prev => prev.map(entry => {
-        if (entryIds.includes(entry.sys.id)) {
-          return {
-            ...entry,
-            sys: {
-              ...entry.sys,
-              publishedVersion: undefined
-            }
-          };
-        }
-        return entry;
-      }));
-      
-      // Show success notification
-      sdk.notifier.success(`Successfully unpublished ${entryIds.length} ${entryIds.length === 1 ? 'entry' : 'entries'}`);
-    } catch (error) {
-      console.error('Error unpublishing entries:', error);
-      sdk.notifier.error('Some entries could not be unpublished. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   return (
@@ -873,6 +789,7 @@ const Home = () => {
                 authorData={authorChartData.authorData}
                 authorUpdatedData={authorChartData.authorUpdatedData}
                 authors={authorChartData.authors}
+                defaultTimeRange={defaultTimeRange}
               />
             </div>
 
@@ -896,14 +813,11 @@ const Home = () => {
               scheduledContent={scheduledContent}
               recentlyPublishedContent={recentlyPublishedContent}
               needsUpdateContent={needsUpdateContent}
-              orphanedContent={orphanedContent}
               userCache={userCache}
               onResolveUser={getUserFullName}
               onOpenEntry={handleOpenEntry}
               needsUpdateMonths={needsUpdateMonths}
               recentlyPublishedDays={recentlyPublishedDays}
-              onArchiveEntries={handleArchiveEntries}
-              onUnpublishEntries={handleUnpublishEntries}
             />
           </>
         )}

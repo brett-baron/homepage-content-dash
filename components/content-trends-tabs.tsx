@@ -24,6 +24,7 @@ interface ContentTrendsTabsProps {
   authorData: Array<{ date: string; [key: string]: string | number }>;
   authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
   authors: string[];
+  defaultTimeRange?: TimeRange;
 }
 
 export default function ContentTrendsTabs({
@@ -34,9 +35,10 @@ export default function ContentTrendsTabs({
   contentTypes,
   authorData,
   authorUpdatedData,
-  authors
+  authors,
+  defaultTimeRange = 'year'
 }: ContentTrendsTabsProps) {
-  const [timeRange, setTimeRange] = useState<TimeRange>('year');
+  const [timeRange, setTimeRange] = useState<TimeRange>(defaultTimeRange);
   const [contentView, setContentView] = useState<ContentType>('new');
 
   return (

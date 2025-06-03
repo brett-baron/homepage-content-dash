@@ -8,14 +8,11 @@ interface ContentEntryTabsProps {
   scheduledContent: any[];
   recentlyPublishedContent: any[];
   needsUpdateContent: any[];
-  orphanedContent: any[];
   userCache: Record<string, string>;
   onResolveUser: (userId: string) => Promise<string>;
   onOpenEntry?: (entryId: string) => void;
   needsUpdateMonths?: number;
   recentlyPublishedDays?: number;
-  onArchiveEntries?: (entryIds: string[]) => Promise<void>;
-  onUnpublishEntries?: (entryIds: string[]) => Promise<void>;
 }
 
 interface TransformedEntry {
@@ -36,8 +33,6 @@ const getEntryTitle = (entry: EntryProps): string => {
   // Try to find the first field that could be a title
   const titleFields = ['title', 'name', 'heading', 'internalName'];
   const fields = entry.fields || {};
-  
-
   
   for (const fieldName of titleFields) {
     const field = fields[fieldName];
@@ -84,37 +79,30 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   scheduledContent,
   recentlyPublishedContent,
   needsUpdateContent,
-  orphanedContent,
   userCache,
   onResolveUser,
   onOpenEntry,
   needsUpdateMonths = 6,
   recentlyPublishedDays = 7,
-  onArchiveEntries,
-  onUnpublishEntries,
 }) => {
   const [transformedData, setTransformedData] = useState<{
     scheduled: TransformedEntry[];
     published: TransformedEntry[];
     update: TransformedEntry[];
-    orphaned: TransformedEntry[];
   }>({
     scheduled: [],
     published: [],
     update: [],
-    orphaned: [],
   });
 
   const [showMore, setShowMore] = useState<{
     scheduled: boolean;
     published: boolean;
     update: boolean;
-    orphaned: boolean;
   }>({
     scheduled: false,
     published: false,
     update: false,
-    orphaned: false,
   });
 
   useEffect(() => {
@@ -156,21 +144,18 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
         ...entry,
         needsUpdate: true
       }));
-      
-      const orphaned = await transformEntries(orphanedContent);
 
       setTransformedData({
         scheduled,
         published,
         update: updateWithFlag,
-        orphaned,
       });
     };
 
     updateTransformedData();
-  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, orphanedContent, userCache, onResolveUser]);
+  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, userCache, onResolveUser]);
 
-  const getDisplayData = (data: TransformedEntry[], type: 'scheduled' | 'published' | 'update' | 'orphaned') => {
+  const getDisplayData = (data: TransformedEntry[], type: 'scheduled' | 'published' | 'update') => {
     // Pre-sort the data depending on the type
     let sortedData = [...data];
     
@@ -220,7 +205,6 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
         <TabsTrigger value="scheduled">Scheduled Content</TabsTrigger>
         <TabsTrigger value="published">Recently Published</TabsTrigger>
         <TabsTrigger value="update">Needs Update</TabsTrigger>
-        <TabsTrigger value="orphaned">Orphaned Content</TabsTrigger>
       </TabsList>
       <TabsContent value="scheduled" className="space-y-4">
         <ContentTable
@@ -250,22 +234,6 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
           onEntryClick={onOpenEntry}
           hideActions={true}
           showAge={true}
-        />
-      </TabsContent>
-      <TabsContent value="orphaned" className="space-y-4">
-        <ContentTable
-          title="Content that is not referenced"
-          description={
-            "Entries that are not linked by any other content. " +
-            "This excludes system content types like settings and navigation."
-          }
-          data={getDisplayData(transformedData.orphaned, 'orphaned')}
-          showStage={false}
-          onEntryClick={onOpenEntry}
-          hideActions={false}
-          isOrphanedContent={true}
-          onArchiveEntries={onArchiveEntries}
-          onUnpublishEntries={onUnpublishEntries}
         />
       </TabsContent>
     </Tabs>
