@@ -150,18 +150,14 @@ export const getContentStatsPaginated = async (
   const thisMonthPublished = (monthlyStatsItems as ContentfulEntry[])
     .filter((entry) => {
       const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
-      const contentType = entry.sys.contentType?.sys?.id;
-      return firstPublishDate >= dates.currentMonth && 
-             (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
+      return firstPublishDate >= dates.currentMonth;
     }).length;
 
   const previousMonthPublished = (monthlyStatsItems as ContentfulEntry[])
     .filter((entry) => {
       const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
-      const contentType = entry.sys.contentType?.sys?.id;
       return firstPublishDate >= dates.previousMonth && 
-             firstPublishDate < dates.currentMonth &&
-             (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
+             firstPublishDate < dates.currentMonth;
     }).length;
 
   // Calculate percent change
@@ -249,10 +245,10 @@ export const fetchChartData = async (
 }> => {
   const { monthsToShow = 12 } = options;
 
+  // Calculate start of current month and previous month
   const now = new Date();
-  const startDate = new Date(now);
-  startDate.setMonth(now.getMonth() - monthsToShow + 1);
-  startDate.setDate(1);
+  const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startDate = new Date(now.getFullYear(), now.getMonth() - monthsToShow + 1, 1);
 
   // Create fetch functions for pagination
   const fetchNewContent = (skip: number, limit: number) =>
@@ -300,7 +296,7 @@ export const fetchChartData = async (
     currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
 
-  // Count new entries by month
+  // Count new entries by month using exact month boundaries
   (newContentItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.firstPublishedAt) {
       const publishDate = new Date(entry.sys.firstPublishedAt);
@@ -311,7 +307,7 @@ export const fetchChartData = async (
     }
   });
 
-  // Count all published entries by month
+  // Count all published entries by month using exact month boundaries
   (allPublishedItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.publishedAt) {
       const publishDate = new Date(entry.sys.publishedAt);
@@ -322,7 +318,7 @@ export const fetchChartData = async (
     }
   });
 
-  // Process month counts (no changes needed here)
+  // Process month counts using the same calculation as the card
   const processMonthCounts = (counts: Record<string, number>) => {
     return Object.entries(counts)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -409,6 +405,10 @@ export async function fetchContentTypeChartData(
   try {
     const { trackedContentTypes, monthsToShow = 12 } = options;
 
+    // Calculate start of current month and previous month
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth() - monthsToShow + 1, 1);
+
     // Get all entries with their publish dates
     const publishedEntries = await cma.entry.getMany({
       spaceId,
@@ -437,11 +437,6 @@ export async function fetchContentTypeChartData(
     const contentTypes = new Set<string>();
 
     // Initialize all months with zero counts
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setMonth(now.getMonth() - monthsToShow); // Start from monthsToShow months ago
-    startDate.setDate(1); // Start from first day of month
-
     let currentMonth = new Date(startDate);
     while (currentMonth <= now) {
       const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
@@ -450,11 +445,12 @@ export async function fetchContentTypeChartData(
       currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
-    // Process published entries
+    // Process published entries - ONLY filter by content type here
     publishedEntries.items.forEach((entry: any) => {
       const contentType = entry.sys.contentType.sys.id;
-      if (!trackedContentTypes.length || trackedContentTypes.includes(contentType)) {
-        const date = new Date(entry.sys.firstPublishedAt); // Use firstPublishedAt for new content
+      // Only process if content type is tracked
+      if (trackedContentTypes.length === 0 || trackedContentTypes.includes(contentType)) {
+        const date = new Date(entry.sys.firstPublishedAt);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
         
         if (monthlyData[monthKey]) {
@@ -467,11 +463,12 @@ export async function fetchContentTypeChartData(
       }
     });
 
-    // Process updated entries
+    // Process updated entries - ONLY filter by content type here
     updatedEntries.items.forEach((entry: any) => {
       const contentType = entry.sys.contentType.sys.id;
-      if (!trackedContentTypes.length || trackedContentTypes.includes(contentType)) {
-        const date = new Date(entry.sys.publishedAt); // Use publishedAt for updated content
+      // Only process if content type is tracked
+      if (trackedContentTypes.length === 0 || trackedContentTypes.includes(contentType)) {
+        const date = new Date(entry.sys.publishedAt);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
         
         if (monthlyUpdatedData[monthKey]) {
