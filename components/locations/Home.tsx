@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer, Users } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentTrendsTabs from "@/components/content-trends-tabs"
@@ -9,6 +9,7 @@ import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculate
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { formatPercentageChange } from "../../utils/calculations"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface ScheduledRelease {
   id: string;
@@ -85,6 +86,9 @@ const Home = () => {
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const loadingTimerRef = useRef<NodeJS.Timeout>();
+
+  const [selectedUser, setSelectedUser] = useState<string>("all");
+  const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string }>>([]);
 
   // Effect to load app installation parameters
   useEffect(() => {
@@ -633,6 +637,32 @@ const Home = () => {
     fetchContentStats();
   }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
 
+  // Add this effect to update available users whenever the content changes
+  useEffect(() => {
+    const uniqueUsers = new Set<string>();
+    
+    // Collect users from all content
+    [...scheduledContent, ...recentlyPublishedContent, ...needsUpdateContent].forEach(entry => {
+      const publishedBy = entry.sys.publishedBy?.sys.id;
+      const updatedBy = entry.sys.updatedBy?.sys.id;
+      const createdBy = entry.sys.createdBy?.sys.id;
+      
+      if (publishedBy) uniqueUsers.add(publishedBy);
+      if (updatedBy) uniqueUsers.add(updatedBy);
+      if (createdBy) uniqueUsers.add(createdBy);
+    });
+
+    // Convert user IDs to names and update state
+    Promise.all(
+      Array.from(uniqueUsers).map(async userId => ({
+        id: userId,
+        name: await getUserFullName(userId)
+      }))
+    ).then(users => {
+      setAvailableUsers(users.sort((a, b) => a.name.localeCompare(b.name)));
+    });
+  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, getUserFullName]);
+
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
     return date.toLocaleString('en-US', {
@@ -681,7 +711,25 @@ const Home = () => {
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex justify-between items-center">
-          <h1 className="text-4xl font-bold">Content Dashboard</h1>
+          <div className="flex items-center gap-6">
+            <h1 className="text-4xl font-bold">Content Dashboard</h1>
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-gray-500" />
+              <Select value={selectedUser} onValueChange={setSelectedUser}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Filter by user" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Team Members</SelectItem>
+                  {availableUsers.map(user => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <button 
             onClick={() => window.location.reload()}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
