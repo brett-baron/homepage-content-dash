@@ -537,7 +537,7 @@ const Home = () => {
         const authors = new Set<string>();
 
         // Helper function to process entries by date and author
-        const processEntriesByAuthor = (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
+        const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
           for (const entry of entries) {
             // For new content: use firstPublishedAt
             // For updated content: use publishedAt or updatedAt (whichever is more recent)
@@ -552,7 +552,7 @@ const Home = () => {
             const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             
             // Skip if the entry doesn't have the required date
-            if (!date) continue;
+            if (!date || isNaN(date.getTime())) continue;
 
             // For new content: use publishedBy (or fall back to createdBy)
             // For updated content: use updatedBy for updates, publishedBy for new publishes
@@ -564,8 +564,8 @@ const Home = () => {
 
             if (!authorId) continue;
             
-            // Get author name from cache
-            const authorName = userCache[authorId] || authorId;
+            // Get author name from cache or fetch it
+            const authorName = await getUserFullName(authorId);
             authors.add(authorName);
 
             if (!dataMap.has(monthYear)) {
@@ -580,9 +580,11 @@ const Home = () => {
         // For new content: only count first publications
         const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
           .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
-          .sort((a, b) => new Date((a.sys.firstPublishedAt || a.sys.publishedAt)!).getTime() - new Date((b.sys.firstPublishedAt || b.sys.publishedAt)!).getTime());
-
-        processEntriesByAuthor(publishedEntries, authorData, false);
+          .sort((a, b) => {
+            const aDate = new Date(a.sys.firstPublishedAt || a.sys.publishedAt || 0);
+            const bDate = new Date(b.sys.firstPublishedAt || b.sys.publishedAt || 0);
+            return aDate.getTime() - bDate.getTime();
+          });
 
         // For updated content: count both new publications and updates
         const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
@@ -599,7 +601,11 @@ const Home = () => {
             return aDate.getTime() - bDate.getTime();
           });
 
-        processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
+        // Process both sets of entries
+        await Promise.all([
+          processEntriesByAuthor(publishedEntries, authorData, false),
+          processEntriesByAuthor(updatedEntries, authorUpdatedData, true)
+        ]);
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
@@ -618,23 +624,28 @@ const Home = () => {
           dataMap.forEach((_, date) => dates.add(date));
 
           // Convert to array and sort
-          return Array.from(dates)
-            .sort()
-            .map(date => ({
+          const sortedDates = Array.from(dates).sort();
+          const sortedAuthors = Array.from(authors).sort();
+
+          return sortedDates.map(date => {
+            const monthData = dataMap.get(date) || new Map();
+            return {
               date,
               ...Object.fromEntries(
-                Array.from(authors).map(author => [
+                sortedAuthors.map(author => [
                   author,
-                  (dataMap.get(date)?.get(author) || 0)
+                  monthData.get(author) || 0
                 ])
               )
-            }));
+            };
+          });
         };
 
+        // Update author chart data state
         setAuthorChartData({
           authorData: convertMapToChartData(authorData),
           authorUpdatedData: convertMapToChartData(authorUpdatedData),
-          authors: Array.from(authors)
+          authors: Array.from(authors).sort()
         });
         
         setIsLoading(false);
