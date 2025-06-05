@@ -108,7 +108,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
   useEffect(() => {
     const transformEntries = async (entries: EntryProps[]) => {
       const transformed = await Promise.all(entries.map(async (entry) => {
-        const userId = entry.sys.createdBy?.sys.id || 'Unknown';
+        const userId = entry.sys.publishedBy?.sys.id || entry.sys.createdBy?.sys.id || 'Unknown';
         let authorName = userCache[userId];
         
         if (!authorName && userId !== 'Unknown') {

@@ -53,6 +53,16 @@ interface DashboardAppInstallationParameters {
   timeToPublishDays: number;
 }
 
+// Add this new interface after the existing interfaces
+interface User {
+  sys: {
+    id: string;
+  };
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
 const Home = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
@@ -89,6 +99,9 @@ const Home = () => {
 
   const [selectedUser, setSelectedUser] = useState<string>("all");
   const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; name: string }>>([]);
+
+  // Add new state for all users
+  const [allUsers, setAllUsers] = useState<User[]>([]);
 
   // Effect to load app installation parameters
   useEffect(() => {
@@ -150,56 +163,58 @@ const Home = () => {
     };
   }, [isLoading]);
 
-  // Fix the getUserFullName function to use getManyForSpace
+  // Add this new effect at the start of the component
+  useEffect(() => {
+    const fetchAllUsers = async () => {
+      try {
+        const response = await cma.user.getManyForSpace({
+          spaceId: sdk.ids.space
+        });
+        
+        setAllUsers(response.items);
+        
+        // Pre-populate the userCache with all users
+        const newUserCache: UserCache = {};
+        response.items.forEach(user => {
+          const fullName = user.firstName && user.lastName 
+            ? `${user.firstName} ${user.lastName}`
+            : user.email || user.sys.id;
+          newUserCache[user.sys.id] = fullName;
+        });
+        setUserCache(newUserCache);
+      } catch (error) {
+        console.error('Error fetching users:', error);
+      }
+    };
+
+    fetchAllUsers();
+  }, [cma, sdk.ids.space]);
+
+  // Replace the getUserFullName function with this version
   const getUserFullName = useCallback(async (userId: string): Promise<string> => {
     // Check memory cache first
     if (userCache[userId]) {
       return userCache[userId];
     }
 
-    // Check cache
-    const cachedUser = cache.users.get(userId);
-    if (cachedUser && Date.now() - cachedUser.timestamp < CACHE_DURATION) {
-      // Update component state cache
-      setUserCache(prev => ({
-        ...prev,
-        [userId]: cachedUser.data
-      }));
-      return cachedUser.data;
-    }
-
-    try {
-      // Use getManyForSpace instead of getMany
-      const users = await cma.user.getManyForSpace({
-        spaceId: sdk.ids.space
-      });
-      
-      const user = users.items.find(u => u.sys.id === userId);
-      if (!user) {
-        throw new Error(`User not found: ${userId}`);
-      }
-
+    // Find user in allUsers if not in cache
+    const user = allUsers.find(u => u.sys.id === userId);
+    if (user) {
       const fullName = user.firstName && user.lastName 
         ? `${user.firstName} ${user.lastName}`
         : user.email || userId;
-
-      // Update both caches
-      cache.users.set(userId, {
-        data: fullName,
-        timestamp: Date.now()
-      });
-
+      
+      // Update cache
       setUserCache(prev => ({
         ...prev,
         [userId]: fullName
       }));
-
+      
       return fullName;
-    } catch (error) {
-      console.error(`Error fetching user data for ${userId}:`, error);
-      return userId;
     }
-  }, [cma, sdk.ids.space, userCache]);
+
+    return userId;
+  }, [userCache, allUsers]);
 
   // Add a function to fetch content types with caching
   const getContentTypes = useCallback(async () => {
@@ -522,7 +537,7 @@ const Home = () => {
         const authors = new Set<string>();
 
         // Helper function to process entries by date and author
-        const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
+        const processEntriesByAuthor = (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
           for (const entry of entries) {
             // For new content: use firstPublishedAt
             // For updated content: use publishedAt or updatedAt (whichever is more recent)
@@ -549,12 +564,8 @@ const Home = () => {
 
             if (!authorId) continue;
             
-            // Get author name from cache or resolve it
-            let authorName = userCache[authorId];
-            if (!authorName && authorId !== 'Unknown') {
-              authorName = await getUserFullName(authorId);
-            }
-            authorName = authorName || authorId;
+            // Get author name from cache
+            const authorName = userCache[authorId] || authorId;
             authors.add(authorName);
 
             if (!dataMap.has(monthYear)) {
@@ -571,7 +582,7 @@ const Home = () => {
           .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
           .sort((a, b) => new Date((a.sys.firstPublishedAt || a.sys.publishedAt)!).getTime() - new Date((b.sys.firstPublishedAt || b.sys.publishedAt)!).getTime());
 
-        await processEntriesByAuthor(publishedEntries, authorData, false);
+        processEntriesByAuthor(publishedEntries, authorData, false);
 
         // For updated content: count both new publications and updates
         const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
@@ -588,7 +599,7 @@ const Home = () => {
             return aDate.getTime() - bDate.getTime();
           });
 
-        await processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
+        processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
@@ -745,6 +756,9 @@ const Home = () => {
             <div className="flex flex-col items-center">
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
               <p className="mt-4 text-muted-foreground">Loading content data...</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Time elapsed: {loadingTime} seconds
+              </p>
             </div>
           </div>
         ) : error ? (
