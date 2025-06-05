@@ -109,24 +109,58 @@ const Home = () => {
       try {
         // Try to get parameters from localStorage first
         const storedConfig = localStorage.getItem('contentDashboardConfig');
+        
         if (storedConfig) {
-          const parsedConfig = JSON.parse(storedConfig) as DashboardAppInstallationParameters;
-          setTrackedContentTypes(parsedConfig.trackedContentTypes || []);
-          setNeedsUpdateMonths(parsedConfig.needsUpdateMonths || 6);
-          setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays || 7);
-          setShowUpcomingReleases(parsedConfig.showUpcomingReleases ?? true);
-          setTimeToPublishDays(parsedConfig.timeToPublishDays || 30);
-          setDefaultTimeRange(parsedConfig.defaultTimeRange || 'year');
-          return;
+          try {
+            const parsedConfig = JSON.parse(storedConfig);
+            
+            // Clean up the configuration by only taking the fields we need
+            const cleanConfig = {
+              trackedContentTypes: parsedConfig.trackedContentTypes || [],
+              needsUpdateMonths: parsedConfig.needsUpdateMonths || 6,
+              defaultTimeRange: (parsedConfig.defaultTimeRange || 'year') as 'all' | 'year' | '6months',
+              recentlyPublishedDays: parsedConfig.recentlyPublishedDays || 7,
+              showUpcomingReleases: parsedConfig.showUpcomingReleases ?? true,
+              timeToPublishDays: parsedConfig.timeToPublishDays || 30
+            };
+            
+            // Save the cleaned config back to localStorage
+            localStorage.setItem('contentDashboardConfig', JSON.stringify(cleanConfig));
+            
+            // Update all state values
+            setTrackedContentTypes(cleanConfig.trackedContentTypes);
+            setNeedsUpdateMonths(cleanConfig.needsUpdateMonths);
+            setRecentlyPublishedDays(cleanConfig.recentlyPublishedDays);
+            setShowUpcomingReleases(cleanConfig.showUpcomingReleases);
+            setTimeToPublishDays(cleanConfig.timeToPublishDays);
+            setDefaultTimeRange(cleanConfig.defaultTimeRange);
+            
+            return;
+          } catch (error) {
+            console.error('Error parsing stored config:', error);
+          }
         }
 
-        // If not in localStorage, use default values
-        setTrackedContentTypes([]);
-        setNeedsUpdateMonths(6);
-        setRecentlyPublishedDays(7);
-        setShowUpcomingReleases(true);
-        setTimeToPublishDays(30);
-        setDefaultTimeRange('year');
+        // If not in localStorage or parsing failed, use default values
+        const defaultConfig = {
+          trackedContentTypes: [],
+          needsUpdateMonths: 6,
+          defaultTimeRange: 'year' as const,
+          recentlyPublishedDays: 7,
+          showUpcomingReleases: true,
+          timeToPublishDays: 30
+        };
+        
+        // Save default config to localStorage
+        localStorage.setItem('contentDashboardConfig', JSON.stringify(defaultConfig));
+        
+        // Set all state values to defaults
+        setTrackedContentTypes(defaultConfig.trackedContentTypes);
+        setNeedsUpdateMonths(defaultConfig.needsUpdateMonths);
+        setRecentlyPublishedDays(defaultConfig.recentlyPublishedDays);
+        setShowUpcomingReleases(defaultConfig.showUpcomingReleases);
+        setTimeToPublishDays(defaultConfig.timeToPublishDays);
+        setDefaultTimeRange(defaultConfig.defaultTimeRange);
       } catch (error) {
         console.error('Error loading app parameters:', error);
         // Use defaults if loading fails

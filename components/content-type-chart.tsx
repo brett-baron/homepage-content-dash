@@ -96,7 +96,6 @@ export default function ContentTypeChart({
     const sourceData = selectedContentType === 'new' ? data : updatedData;
     
     if (!sourceData || sourceData.length === 0) {
-      console.log('No data available');
       return;
     }
 
@@ -128,9 +127,7 @@ export default function ContentTypeChart({
     const filtered = filterData();
     
     // Find content types that have non-zero values in the filtered data
-    const activeTypes = contentTypes.filter(type => 
-      filtered.some(item => Number(item[type]) > 0)
-    );
+    const activeTypes = contentTypes;  // Show all tracked types, even if they have no data
     setActiveContentTypes(activeTypes);
 
     // Process data to identify highest value for each date
@@ -143,6 +140,7 @@ export default function ContentTypeChart({
         highestValue: highest.value
       };
     });
+
     setProcessedData(processed);
     setFilteredData(filtered);
     

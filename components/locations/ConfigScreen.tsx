@@ -33,9 +33,19 @@ const ConfigScreen = () => {
     // This method will be called when a user clicks on "Install"
     // or "Save" in the configuration screen.
     
-    // Store the configuration in localStorage for the Home component to access
-    localStorage.setItem('contentDashboardConfig', JSON.stringify(parameters));
-    console.log('Saved configuration to localStorage:', parameters);
+    // Create a clean configuration object with only the current parameters
+    const cleanConfig = {
+      trackedContentTypes: parameters.trackedContentTypes || [],
+      needsUpdateMonths: parameters.needsUpdateMonths || 6,
+      defaultTimeRange: parameters.defaultTimeRange || 'year',
+      recentlyPublishedDays: parameters.recentlyPublishedDays || 7,
+      showUpcomingReleases: parameters.showUpcomingReleases ?? true,
+      timeToPublishDays: parameters.timeToPublishDays || 30
+    };
+    
+    // Store the clean configuration in localStorage
+    localStorage.setItem('contentDashboardConfig', JSON.stringify(cleanConfig));
+    console.log('Saved clean configuration to localStorage:', cleanConfig);
     
     // Get current the state of EditorInterface and other entities
     // related to this app installation
@@ -43,7 +53,7 @@ const ConfigScreen = () => {
 
     return {
       // Parameters to be persisted as the app configuration.
-      parameters,
+      parameters: cleanConfig,
       // In case you don't want to submit any update to app
       // locations, you can just pass the currentState as is
       targetState: currentState,
@@ -56,6 +66,10 @@ const ConfigScreen = () => {
     // its configuration.
     sdk.app.onConfigure(() => onConfigure());
   }, [sdk, onConfigure]);
+
+  useEffect(() => {
+    console.log('Parameters updated:', parameters);
+  }, [parameters]);
 
   useEffect(() => {
     (async () => {
@@ -162,24 +176,24 @@ const ConfigScreen = () => {
     }
   };
 
-  const handleTrackedContentTypeSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { checked, value } = event.target;
-    console.log(`Tracked content type selection changed: ${value} - ${checked ? 'checked' : 'unchecked'}`);
+  const handleTrackedContentTypeSelection = (value: string) => {
+    console.log(`Tracked content type selection changed: ${value}`);
 
     setParameters(prev => {
       const trackedContentTypes = prev.trackedContentTypes || [];
+      const isAlreadyTracked = trackedContentTypes.includes(value);
 
-      if (checked) {
-        // Add to tracked types
-        return {
-          ...prev,
-          trackedContentTypes: [...trackedContentTypes, value]
-        };
-      } else {
+      if (isAlreadyTracked) {
         // Remove from tracked types
         return {
           ...prev,
           trackedContentTypes: trackedContentTypes.filter(id => id !== value)
+        };
+      } else {
+        // Add to tracked types
+        return {
+          ...prev,
+          trackedContentTypes: [...trackedContentTypes, value]
         };
       }
     });
@@ -366,11 +380,27 @@ const ConfigScreen = () => {
               >
                 {filteredContentTypes.map(contentType => (
                   <Multiselect.Option
-                    key={`track-${contentType.id}`}
-                    itemId={`track-${contentType.id}`}
+                    key={contentType.id}
+                    itemId={contentType.id}
                     value={contentType.id}
                     label={`${contentType.name} (${contentType.id})`}
-                    onSelectItem={handleTrackedContentTypeSelection}
+                    onSelectItem={(event) => {
+                      const { checked, value } = event.target;
+                      setParameters(prev => {
+                        const trackedContentTypes = prev.trackedContentTypes || [];
+                        if (checked) {
+                          return {
+                            ...prev,
+                            trackedContentTypes: [...trackedContentTypes, value]
+                          };
+                        } else {
+                          return {
+                            ...prev,
+                            trackedContentTypes: trackedContentTypes.filter(id => id !== value)
+                          };
+                        }
+                      });
+                    }}
                     isChecked={(parameters.trackedContentTypes || []).includes(contentType.id)}
                   />
                 ))}
