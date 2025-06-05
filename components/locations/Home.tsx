@@ -534,13 +534,12 @@ const Home = () => {
         // Process author data from recentlyPublishedResponse and needsUpdateResponse
         const authorData = new Map<string, Map<string, number>>();
         const authorUpdatedData = new Map<string, Map<string, number>>();
+        const authorIdToName = new Map<string, string>();
         const authors = new Set<string>();
 
         // Helper function to process entries by date and author
         const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
           for (const entry of entries) {
-            // For new content: use firstPublishedAt
-            // For updated content: use publishedAt or updatedAt (whichever is more recent)
             const date = new Date(
               useUpdateDate 
                 ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0) 
@@ -563,9 +562,13 @@ const Home = () => {
               : (entry.sys.publishedBy?.sys.id || entry.sys.createdBy?.sys.id);
 
             if (!authorId) continue;
-            
+
             // Get author name from cache or fetch it
-            const authorName = await getUserFullName(authorId);
+            let authorName = authorIdToName.get(authorId);
+            if (!authorName) {
+              authorName = await getUserFullName(authorId);
+              authorIdToName.set(authorId, authorName);
+            }
             authors.add(authorName);
 
             if (!dataMap.has(monthYear)) {
@@ -577,7 +580,6 @@ const Home = () => {
         };
 
         // Process entries for both new and updated content
-        // For new content: only count first publications
         const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
           .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
           .sort((a, b) => {
@@ -586,7 +588,6 @@ const Home = () => {
             return aDate.getTime() - bDate.getTime();
           });
 
-        // For updated content: count both new publications and updates
         const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
           .filter(entry => entry.sys.publishedAt || entry.sys.updatedAt)
           .sort((a, b) => {
