@@ -146,23 +146,28 @@ export const getContentStatsPaginated = async (
     fetchAllPages(fetchRecentAndNeedsUpdate)
   ]);
 
-  // Process monthly stats
-  const thisMonthPublished = (monthlyStatsItems as ContentfulEntry[])
-    .filter((entry) => {
-      const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
-      const contentType = entry.sys.contentType?.sys?.id;
-      return firstPublishDate >= dates.currentMonth && 
-             (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
-    }).length;
+  // Create a map to store counts by month
+  const monthCounts = new Map<string, number>();
+  
+  // Initialize current and previous month with 0
+  const currentMonthKey = `${dates.currentMonth.getFullYear()}-${String(dates.currentMonth.getMonth() + 1).padStart(2, '0')}`;
+  const previousMonthKey = `${dates.previousMonth.getFullYear()}-${String(dates.previousMonth.getMonth() + 1).padStart(2, '0')}`;
+  monthCounts.set(currentMonthKey, 0);
+  monthCounts.set(previousMonthKey, 0);
 
-  const previousMonthPublished = (monthlyStatsItems as ContentfulEntry[])
-    .filter((entry) => {
-      const firstPublishDate = new Date(entry.sys.firstPublishedAt!);
-      const contentType = entry.sys.contentType?.sys?.id;
-      return firstPublishDate >= dates.previousMonth && 
-             firstPublishDate < dates.currentMonth &&
-             (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
-    }).length;
+  // Count entries by month
+  (monthlyStatsItems as ContentfulEntry[]).forEach((entry) => {
+    if (entry.sys.firstPublishedAt) {
+      const publishDate = new Date(entry.sys.firstPublishedAt);
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}`;
+      if (monthCounts.has(monthKey)) {
+        monthCounts.set(monthKey, monthCounts.get(monthKey)! + 1);
+      }
+    }
+  });
+
+  const thisMonthPublished = monthCounts.get(currentMonthKey) || 0;
+  const previousMonthPublished = monthCounts.get(previousMonthKey) || 0;
 
   // Calculate percent change
   const percentChange = calculatePercentageChange(thisMonthPublished, previousMonthPublished);
@@ -184,7 +189,7 @@ export const getContentStatsPaginated = async (
              (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
     }).length;
 
-  // Calculate scheduled count from actions (no pagination needed as limited to 500)
+  // Calculate scheduled count from actions
   const scheduledEntryIds = new Set<string>();
   actions?.forEach((action: ScheduledAction) => {
     if (action.sys.status === 'scheduled' && 
@@ -241,18 +246,21 @@ export const fetchChartData = async (
   spaceId: string,
   environmentId: string,
   options: {
-    monthsToShow?: number;
+    monthsToShow?: number | null;
   } = {}
 ): Promise<{
   newContent: Array<{ date: string; count: number; percentChange?: number }>;
   updatedContent: Array<{ date: string; count: number; percentChange?: number }>;
 }> => {
-  const { monthsToShow = 12 } = options;
+  // Use 1200 months (100 years) for "All Time" view
+  const effectiveMonthsToShow = options.monthsToShow === null ? 1200 : (options.monthsToShow ?? 12);
 
   const now = new Date();
   const startDate = new Date(now);
-  startDate.setMonth(now.getMonth() - monthsToShow + 1);
+  // Remove the +1 to include the full range of months
+  startDate.setMonth(now.getMonth() - effectiveMonthsToShow);
   startDate.setDate(1);
+  startDate.setHours(0, 0, 0, 0);  // Set to beginning of the day
 
   // Create fetch functions for pagination
   const fetchNewContent = (skip: number, limit: number) =>
