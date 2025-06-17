@@ -85,7 +85,8 @@ export const getContentStatsPaginated = async (
   actions: any[],
   recentlyPublishedDays: number = 7,
   needsUpdateMonths: number = 6,
-  trackedContentTypes: string[] = []
+  trackedContentTypes: string[] = [],
+  selectedUser: string | null = null
 ): Promise<ContentStats> => {
   const now = new Date();
   
@@ -155,9 +156,17 @@ export const getContentStatsPaginated = async (
   monthCounts.set(currentMonthKey, 0);
   monthCounts.set(previousMonthKey, 0);
 
-  // Count entries by month
+  // Count entries by month, filtering by user if a user is selected
   (monthlyStatsItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.firstPublishedAt) {
+      // Skip if a user is selected and this entry isn't by that user
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return;
+      }
+      
       const publishDate = new Date(entry.sys.firstPublishedAt);
       const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}`;
       if (monthCounts.has(monthKey)) {
@@ -172,11 +181,20 @@ export const getContentStatsPaginated = async (
   // Calculate percent change
   const percentChange = calculatePercentageChange(thisMonthPublished, previousMonthPublished);
 
-  // Process recent and needs update counts
+  // Process recent and needs update counts, filtering by user if a user is selected
   const recentlyPublishedCount = (recentAndNeedsUpdateItems as ContentfulEntry[])
     .filter((entry) => {
       const publishDate = new Date(entry.sys.publishedAt!);
       const contentType = entry.sys.contentType?.sys?.id;
+      
+      // Skip if a user is selected and this entry isn't by that user
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return false;
+      }
+      
       return publishDate >= dates.recentlyPublished &&
              (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
     }).length;
@@ -185,33 +203,72 @@ export const getContentStatsPaginated = async (
     .filter((entry) => {
       const publishDate = new Date(entry.sys.publishedAt!);
       const contentType = entry.sys.contentType?.sys?.id;
+      
+      // Skip if a user is selected and this entry isn't by that user
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return false;
+      }
+      
       return publishDate <= dates.needsUpdate &&
              (!trackedContentTypes.length || trackedContentTypes.includes(contentType));
     }).length;
 
-  // Calculate scheduled count from actions
+  // Calculate scheduled count from actions, filtering by user if a user is selected
   const scheduledEntryIds = new Set<string>();
-  actions?.forEach((action: ScheduledAction) => {
-    if (action.sys.status === 'scheduled' && 
-        new Date(action.scheduledFor.datetime) > now &&
-        action.action === 'publish') {
-      
-      if (action.entity.sys.linkType === 'Entry') {
-        scheduledEntryIds.add(action.entity.sys.id);
-      } else if (action.entity.sys.linkType === 'Release') {
-        action.release?.entities?.items?.forEach((entity: any) => {
-          if (entity.sys?.id) {
-            scheduledEntryIds.add(entity.sys.id);
-          }
-        });
+  
+  if (selectedUser) {
+    // If a user is selected, we'll filter entries later after fetching them
+    actions?.forEach((action: ScheduledAction) => {
+      if (action.sys.status === 'scheduled' && 
+          new Date(action.scheduledFor.datetime) > now &&
+          action.action === 'publish') {
+        
+        if (action.entity.sys.linkType === 'Entry') {
+          scheduledEntryIds.add(action.entity.sys.id);
+        } else if (action.entity.sys.linkType === 'Release') {
+          action.release?.entities?.items?.forEach((entity: any) => {
+            if (entity.sys?.id) {
+              scheduledEntryIds.add(entity.sys.id);
+            }
+          });
+        }
       }
-    }
-  });
+    });
+  } else {
+    // If no user is selected, use all scheduled entries
+    actions?.forEach((action: ScheduledAction) => {
+      if (action.sys.status === 'scheduled' && 
+          new Date(action.scheduledFor.datetime) > now &&
+          action.action === 'publish') {
+        
+        if (action.entity.sys.linkType === 'Entry') {
+          scheduledEntryIds.add(action.entity.sys.id);
+        } else if (action.entity.sys.linkType === 'Release') {
+          action.release?.entities?.items?.forEach((entity: any) => {
+            if (entity.sys?.id) {
+              scheduledEntryIds.add(entity.sys.id);
+            }
+          });
+        }
+      }
+    });
+  }
+
+  // For user filtering on scheduled content, we don't count here 
+  // since we'll count the filtered entries in the Home component
 
   return {
-    totalPublished: totalPublishedResponse.total,
+    totalPublished: selectedUser ? (recentAndNeedsUpdateItems as ContentfulEntry[])
+      .filter(entry => 
+        entry.sys.createdBy?.sys.id === selectedUser || 
+        entry.sys.updatedBy?.sys.id === selectedUser || 
+        entry.sys.publishedBy?.sys.id === selectedUser
+      ).length : totalPublishedResponse.total,
     percentChange,
-    scheduledCount: scheduledEntryIds.size,
+    scheduledCount: scheduledEntryIds.size, // This will be overridden in Home component for user filtering
     recentlyPublishedCount,
     needsUpdateCount,
     previousMonthPublished,
@@ -247,6 +304,7 @@ export const fetchChartData = async (
   environmentId: string,
   options: {
     monthsToShow?: number | null;
+    selectedUser?: string | null;
   } = {}
 ): Promise<{
   newContent: Array<{ date: string; count: number; percentChange?: number }>;
@@ -254,6 +312,7 @@ export const fetchChartData = async (
 }> => {
   // Use 1200 months (100 years) for "All Time" view
   const effectiveMonthsToShow = options.monthsToShow === null ? 1200 : (options.monthsToShow ?? 12);
+  const selectedUser = options.selectedUser || null;
 
   const now = new Date();
   const startDate = new Date(now);
@@ -302,53 +361,92 @@ export const fetchChartData = async (
   // Initialize all months with zero counts
   let currentMonth = new Date(startDate);
   while (currentMonth <= now) {
-    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
     newContentCounts[monthKey] = 0;
     updatedContentCounts[monthKey] = 0;
     currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
 
-  // Count new entries by month
+  // Process new content by month with user filtering if needed
   (newContentItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.firstPublishedAt) {
-      const publishDate = new Date(entry.sys.firstPublishedAt);
-      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
-      if (newContentCounts[monthKey] !== undefined) {
+      // Filter by user if selectedUser is specified
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return;  // Skip entries not associated with the selected user
+      }
+      
+      const date = new Date(entry.sys.firstPublishedAt);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (monthKey in newContentCounts) {
         newContentCounts[monthKey]++;
       }
     }
   });
 
-  // Count all published entries by month
+  // Process updated content by month with user filtering if needed
   (allPublishedItems as ContentfulEntry[]).forEach((entry) => {
     if (entry.sys.publishedAt) {
-      const publishDate = new Date(entry.sys.publishedAt);
-      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
-      if (updatedContentCounts[monthKey] !== undefined) {
+      // Filter by user if selectedUser is specified
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return;  // Skip entries not associated with the selected user
+      }
+      
+      const date = new Date(entry.sys.publishedAt);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (monthKey in updatedContentCounts) {
         updatedContentCounts[monthKey]++;
       }
     }
   });
 
-  // Process month counts (no changes needed here)
-  const processMonthCounts = (counts: Record<string, number>) => {
-    return Object.entries(counts)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, count], index, array) => {
-        if (index === 0) {
-          return { date, count, percentChange: 0 };
-        }
-        
-        const prevCount = array[index - 1][1];
-        const percentChange = calculatePercentageChange(count, prevCount);
-        
-        return { date, count, percentChange };
-      });
-  };
+  // Convert to array format
+  const sortedMonths = Object.keys(newContentCounts).sort();
+  const newContent: Array<{ date: string; count: number; percentChange?: number }> = sortedMonths.map(month => ({
+    date: month,
+    count: newContentCounts[month]
+  }));
+
+  const updatedContent: Array<{ date: string; count: number; percentChange?: number }> = sortedMonths.map(month => ({
+    date: month,
+    count: updatedContentCounts[month]
+  }));
+
+  // Calculate percentage changes
+  for (let i = 1; i < newContent.length; i++) {
+    const currentCount = newContent[i].count;
+    const previousCount = newContent[i - 1].count;
+    
+    if (previousCount > 0) {
+      newContent[i].percentChange = ((currentCount - previousCount) / previousCount) * 100;
+    } else if (currentCount > 0) {
+      newContent[i].percentChange = 100; // If previous month was 0, and current month has entries, it's a 100% increase
+    } else {
+      newContent[i].percentChange = 0; // If both months are 0, no change
+    }
+  }
+
+  for (let i = 1; i < updatedContent.length; i++) {
+    const currentCount = updatedContent[i].count;
+    const previousCount = updatedContent[i - 1].count;
+    
+    if (previousCount > 0) {
+      updatedContent[i].percentChange = ((currentCount - previousCount) / previousCount) * 100;
+    } else if (currentCount > 0) {
+      updatedContent[i].percentChange = 100;
+    } else {
+      updatedContent[i].percentChange = 0;
+    }
+  }
 
   return {
-    newContent: processMonthCounts(newContentCounts),
-    updatedContent: processMonthCounts(updatedContentCounts)
+    newContent,
+    updatedContent
   };
 };
 
@@ -412,10 +510,11 @@ export async function fetchContentTypeChartData(
   options: {
     trackedContentTypes: string[];
     monthsToShow?: number;
+    selectedUser?: string | null;
   }
 ) {
   try {
-    const { trackedContentTypes, monthsToShow = 12 } = options;
+    const { trackedContentTypes, monthsToShow = 12, selectedUser = null } = options;
 
     // Get all entries with their publish dates
     const publishedEntries = await cma.entry.getMany({
@@ -458,11 +557,20 @@ export async function fetchContentTypeChartData(
       currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
-    // Process published entries
+    // Process published entries with user filtering if needed
     publishedEntries.items.forEach((entry: any) => {
       const contentType = entry.sys.contentType.sys.id;
+      
+      // Filter by user if selectedUser is specified
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return;  // Skip entries not associated with the selected user
+      }
+      
       if (!trackedContentTypes.length || trackedContentTypes.includes(contentType)) {
-        const date = new Date(entry.sys.firstPublishedAt); // Use firstPublishedAt for new content
+        const date = new Date(entry.sys.firstPublishedAt || entry.sys.publishedAt); // Use firstPublishedAt for new content
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
         
         if (monthlyData[monthKey]) {
@@ -475,11 +583,20 @@ export async function fetchContentTypeChartData(
       }
     });
 
-    // Process updated entries
+    // Process updated entries with user filtering if needed
     updatedEntries.items.forEach((entry: any) => {
       const contentType = entry.sys.contentType.sys.id;
+      
+      // Filter by user if selectedUser is specified
+      if (selectedUser && 
+          entry.sys.createdBy?.sys.id !== selectedUser && 
+          entry.sys.updatedBy?.sys.id !== selectedUser && 
+          entry.sys.publishedBy?.sys.id !== selectedUser) {
+        return;  // Skip entries not associated with the selected user
+      }
+      
       if (!trackedContentTypes.length || trackedContentTypes.includes(contentType)) {
-        const date = new Date(entry.sys.publishedAt); // Use publishedAt for updated content
+        const date = new Date(entry.sys.publishedAt || entry.sys.updatedAt); // Use updatedAt or publishedAt for updates
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
         
         if (monthlyUpdatedData[monthKey]) {
@@ -513,8 +630,8 @@ export async function fetchContentTypeChartData(
     });
 
     return {
-      contentTypeData: contentTypeData as Array<{ date: string; [key: string]: string | number }>,
-      contentTypeUpdatedData: contentTypeUpdatedData as Array<{ date: string; [key: string]: string | number }>,
+      contentTypeData,
+      contentTypeUpdatedData,
       contentTypes: contentTypeArray
     };
   } catch (error) {

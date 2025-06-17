@@ -9,6 +9,7 @@ import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculate
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { formatPercentageChange } from "../../utils/calculations"
+import UserFilterDropdown from '@/components/UserFilterDropdown';
 
 interface ScheduledRelease {
   id: string;
@@ -85,6 +86,10 @@ const Home = () => {
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const loadingTimerRef = useRef<NodeJS.Timeout>();
+
+  // New state for user filter
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
 
   // Effect to load app installation parameters
   useEffect(() => {
@@ -292,6 +297,49 @@ const Home = () => {
     authors: string[];
   }>({ authorData: [], authorUpdatedData: [], authors: [] });
 
+  // Add new function to fetch all users
+  const fetchAllUsers = useCallback(async () => {
+    try {
+      const users = await cma.user.getManyForSpace({
+        spaceId: sdk.ids.space
+      });
+      
+      const formattedUsers = users.items.map(user => ({
+        id: user.sys.id,
+        name: user.firstName && user.lastName 
+          ? `${user.firstName} ${user.lastName}`
+          : user.email || user.sys.id
+      }));
+      
+      setAllUsers(formattedUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  }, [cma, sdk.ids.space]);
+
+  // Add useEffect to fetch users on component mount
+  useEffect(() => {
+    fetchAllUsers();
+  }, [fetchAllUsers]);
+  
+  // Add useEffect to persist selected user in sessionStorage
+  useEffect(() => {
+    if (selectedUser) {
+      sessionStorage.setItem('selectedUser', selectedUser);
+    } else {
+      sessionStorage.removeItem('selectedUser');
+    }
+  }, [selectedUser]);
+  
+  // Add useEffect to restore selected user from sessionStorage
+  useEffect(() => {
+    const savedUser = sessionStorage.getItem('selectedUser');
+    if (savedUser) {
+      setSelectedUser(savedUser);
+    }
+  }, []);
+
+  // Modify fetchContentStats to filter by selected user
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
@@ -327,7 +375,10 @@ const Home = () => {
             cma,
             sdk.ids.space,
             sdk.ids.environment,
-            { monthsToShow: 12 }
+            { 
+              monthsToShow: 12,
+              selectedUser: selectedUser
+            }
           ),
           fetchContentTypeChartData(
             cma,
@@ -335,7 +386,8 @@ const Home = () => {
             sdk.ids.environment,
             { 
               trackedContentTypes,
-              monthsToShow: 12
+              monthsToShow: 12,
+              selectedUser: selectedUser
             }
           ),
           // Recently published content
@@ -475,7 +527,35 @@ const Home = () => {
           scheduled = batchResults.flatMap(result => result.items);
         }
 
-        // Get content stats after we have all the scheduled actions processed
+        // Filter content by selected user if a user is selected
+        let filteredScheduledContent = scheduled;
+        let filteredRecentlyPublishedContent = recentlyPublishedResponse.items;
+        let filteredNeedsUpdateContent = needsUpdateResponse.items;
+
+        if (selectedUser) {
+          // Filter scheduled content
+          filteredScheduledContent = scheduled.filter(entry => 
+            entry.sys.createdBy?.sys.id === selectedUser || 
+            entry.sys.updatedBy?.sys.id === selectedUser || 
+            entry.sys.publishedBy?.sys.id === selectedUser
+          );
+
+          // Filter recently published content
+          filteredRecentlyPublishedContent = recentlyPublishedResponse.items.filter(entry => 
+            entry.sys.createdBy?.sys.id === selectedUser || 
+            entry.sys.updatedBy?.sys.id === selectedUser || 
+            entry.sys.publishedBy?.sys.id === selectedUser
+          );
+
+          // Filter needs update content
+          filteredNeedsUpdateContent = needsUpdateResponse.items.filter(entry => 
+            entry.sys.createdBy?.sys.id === selectedUser || 
+            entry.sys.updatedBy?.sys.id === selectedUser || 
+            entry.sys.publishedBy?.sys.id === selectedUser
+          );
+        }
+
+        // Update content stats with filtered data
         const contentStats = await getContentStatsPaginated(
           cma,
           sdk.ids.space,
@@ -483,27 +563,28 @@ const Home = () => {
           scheduledActions.items,
           recentlyPublishedDays,
           needsUpdateMonths,
-          trackedContentTypes
+          trackedContentTypes,
+          selectedUser
         );
 
-        // Calculate total scheduled entries (direct entries + entries in releases)
-        const totalScheduledCount = scheduled.length;
+        // Calculate total scheduled entries for filtered content
+        const totalScheduledCount = filteredScheduledContent.length;
 
-        // Update the stats with the correct scheduled count and average time to publish
+        // Update the stats with the correct scheduled count
         const updatedStats = {
           ...contentStats,
           scheduledCount: totalScheduledCount,
           averageTimeToPublish
         };
 
-        // Update all states at once
+        // Update states with filtered data
         setStats(updatedStats);
         setChartData(chartDataFromApi.newContent);
         setUpdatedChartData(chartDataFromApi.updatedContent);
         setScheduledReleases(releasesData);
-        setScheduledContent(scheduled);
-        setRecentlyPublishedContent(recentlyPublishedResponse.items);
-        setNeedsUpdateContent(needsUpdateResponse.items);
+        setScheduledContent(filteredScheduledContent);
+        setRecentlyPublishedContent(filteredRecentlyPublishedContent);
+        setNeedsUpdateContent(filteredNeedsUpdateContent);
         
         // Update content type chart data
         setContentTypeChartData({
@@ -631,7 +712,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, selectedUser]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -682,15 +763,22 @@ const Home = () => {
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex justify-between items-center">
           <h1 className="text-4xl font-bold">Content Dashboard</h1>
-          <button 
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
-            title="Refresh dashboard"
-            disabled={isLoading}
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-gray-400' : 'text-gray-600'}`} />
-            <span className="text-sm text-gray-600">Refresh</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <UserFilterDropdown 
+              users={allUsers}
+              selectedUser={selectedUser}
+              onUserSelect={setSelectedUser}
+            />
+            <button 
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
+              title="Refresh dashboard"
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-gray-400' : 'text-gray-600'}`} />
+              <span className="text-sm text-gray-600">Refresh</span>
+            </button>
+          </div>
         </div>
         {isLoading ? (
           <div className="flex items-center justify-center p-8">

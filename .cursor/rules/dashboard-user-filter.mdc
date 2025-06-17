@@ -1,0 +1,119 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+Product Requirements Document (PRD)
+
+Feature: User Filter Toggle in Dashboard
+
+
+⸻
+
+1. Objective
+
+Enable dashboard users to toggle between viewing data for all users or a specific user. This feature helps narrow insights, supports personalization, and improves usability for admins or collaborators working across multiple user data sets in the dashboard.
+
+⸻
+
+2. Background & Rationale
+
+Currently, the dashboard shows generalized data. Stakeholders have requested the ability to focus on data related to one user or continue seeing an overview. This is especially relevant in a multi-user CMS setup like Contentful.
+
+⸻
+
+3. Requirements
+
+3.1 Functional Requirements
+
+ID	Requirement	Priority
+FR1	User can toggle between “All Users” and a list of specific users	High
+FR2	When a specific user is selected, all dashboard widgets/charts/tables update accordingly	High
+FR3	User selection is persistent during session	Medium
+FR4	Default view is “All Users”	High
+FR5	User filter can be cleared to return to “All Users”	High
+
+3.2 UI Requirements
+	•	A dropdown menu (or combobox) in the top navigation area or sidebar.
+	•	Use shadcn Select component styled with Tailwind.
+	•	Label: “Filter by User”
+	•	Default option: “All Users”
+	•	Other options: list of users fetched from Contentful users.
+
+⸻
+
+4. User Experience (UX)
+
+User Flow:
+	1.	User lands on dashboard → sees “All Users” data.
+	2.	User clicks “Filter by User” dropdown → selects a specific user.
+	3.	Dashboard updates to show only that user’s data.
+	4.	User clicks “All Users” to revert.
+
+⸻
+
+5. Technical Implementation
+
+5.1 Frontend
+	•	Component: UserFilterDropdown.tsx
+	•	Placement: Top right of dashboard header.
+	•	Uses:
+	•	shadcn <Select />
+	•	TailwindCSS for layout/styling.
+	•	Add state:
+
+const [selectedUser, setSelectedUser] = useState<string | null>('all');
+
+
+
+5.2 Data Handling
+	•	Modify the hook/query that fetches dashboard data:
+
+const filteredData = useDashboardData(selectedUser);
+
+
+	•	Pass selectedUser as a parameter to filter data client-side or at query level (if querying Contentful or another data source).
+
+5.3 Contentful Integration
+	•	Use the Contentful Management API to fetch users.
+
+5.4 Persistence (optional)
+	•	Use localStorage or sessionStorage to keep the filter during the session:
+
+useEffect(() => {
+  const saved = sessionStorage.getItem('selectedUser');
+  if (saved) setSelectedUser(saved);
+}, []);
+
+
+
+⸻
+
+6. Non-Functional Requirements
+	•	Must not affect dashboard performance.
+	•	Mobile responsive.
+	•	Accessible via keyboard navigation.
+
+⸻
+
+
+7. Out of Scope
+	•	Role-based permissioning.
+	•	Editing or managing users from within the filter UI.
+
+⸻
+
+8. Dependencies
+	•	Shadcn UI components
+	•	TailwindCSS
+	•	Dashboard state logic
+	•	Contentful data structure for users
+
+⸻
+
+9. Success Metrics
+	•	Filter toggle load time < 200ms
+	•	Correct filtering accuracy (manually validated)
+	•	No impact on overall dashboard performance
+
