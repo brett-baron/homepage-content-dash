@@ -797,15 +797,27 @@ const Home = () => {
             {showUpcomingReleases && (
               <div className="flex flex-col gap-2 md:gap-4">
                 <h2 className="text-xl font-semibold">Upcoming Scheduled Releases</h2>
-                <ContentTable
-                  data={scheduledReleases}
-                  showItemCount={true}
-                  showUpdatedAt={true}
-                  showUpdatedBy={true}
-                  onReschedule={handleRescheduleRelease}
-                  onCancel={handleCancelRelease}
-                  hideActions={false}
-                />
+                {scheduledReleases.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <CalendarDays className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                      <h3 className="text-lg font-medium text-muted-foreground mb-2">No scheduled releases</h3>
+                      <p className="text-sm text-muted-foreground/80 text-center max-w-md">
+                        Releases will appear here when they are scheduled.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ContentTable
+                    data={scheduledReleases}
+                    showItemCount={true}
+                    showUpdatedAt={true}
+                    showUpdatedBy={true}
+                    onReschedule={handleRescheduleRelease}
+                    onCancel={handleCancelRelease}
+                    hideActions={false}
+                  />
+                )}
               </div>
             )}
 
