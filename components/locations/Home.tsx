@@ -30,17 +30,93 @@ interface ContentType {
   };
 }
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_DURATION = 20 * 60 * 1000; // 20 minutes in milliseconds
+const DASHBOARD_CACHE_KEY = 'contentDashboard_cachedData';
+const DASHBOARD_CACHE_TIMESTAMP_KEY = 'contentDashboard_cacheTimestamp';
 
 interface CachedData<T> {
   data: T;
   timestamp: number;
 }
 
+interface DashboardData {
+  stats: {
+    totalPublished: number;
+    percentChange: number;
+    scheduledCount: number;
+    recentlyPublishedCount: number;
+    needsUpdateCount: number;
+    previousMonthPublished: number;
+    averageTimeToPublish: number;
+  };
+  chartData: Array<{ date: string; count: number }>;
+  updatedChartData: Array<{ date: string; count: number }>;
+  scheduledReleases: ScheduledRelease[];
+  userCache: UserCache;
+  scheduledContent: EntryProps[];
+  recentlyPublishedContent: EntryProps[];
+  needsUpdateContent: EntryProps[];
+  contentTypeChartData: {
+    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypes: string[];
+  };
+  authorChartData: {
+    authorData: Array<{ date: string; [key: string]: string | number }>;
+    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    authors: string[];
+  };
+}
+
 // Add before the Home component
 const cache = {
   users: new Map<string, CachedData<string>>(),
   contentTypes: new Map<string, CachedData<any>>(),
+};
+
+// Helper functions for dashboard data caching
+const saveDashboardDataToCache = (data: DashboardData) => {
+  try {
+    sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
+    sessionStorage.setItem(DASHBOARD_CACHE_TIMESTAMP_KEY, Date.now().toString());
+  } catch (error) {
+    console.warn('Failed to save dashboard data to cache:', error);
+  }
+};
+
+const loadDashboardDataFromCache = (): { data: DashboardData | null; isValid: boolean } => {
+  try {
+    const cachedData = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+    const cacheTimestamp = sessionStorage.getItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+    
+    if (!cachedData || !cacheTimestamp) {
+      return { data: null, isValid: false };
+    }
+    
+    const timestamp = parseInt(cacheTimestamp, 10);
+    const isValid = Date.now() - timestamp < CACHE_DURATION;
+    
+    if (!isValid) {
+      clearDashboardCache();
+      return { data: null, isValid: false };
+    }
+    
+    const data = JSON.parse(cachedData) as DashboardData;
+    return { data, isValid: true };
+  } catch (error) {
+    console.warn('Failed to load dashboard data from cache:', error);
+    clearDashboardCache();
+    return { data: null, isValid: false };
+  }
+};
+
+const clearDashboardCache = () => {
+  try {
+    sessionStorage.removeItem(DASHBOARD_CACHE_KEY);
+    sessionStorage.removeItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+  } catch (error) {
+    console.warn('Failed to clear dashboard cache:', error);
+  }
 };
 
 interface DashboardAppInstallationParameters {
@@ -81,6 +157,8 @@ const Home = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [defaultTimeRange, setDefaultTimeRange] = useState<'all' | 'year' | '6months'>('year');
+  const [hasLoadedData, setHasLoadedData] = useState<boolean>(false);
+  const [forceRefresh, setForceRefresh] = useState<boolean>(false);
 
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
@@ -148,12 +226,7 @@ const Home = () => {
 
   // Fix the getUserFullName function to use getManyForSpace
   const getUserFullName = useCallback(async (userId: string): Promise<string> => {
-    // Check memory cache first
-    if (userCache[userId]) {
-      return userCache[userId];
-    }
-
-    // Check cache
+    // Check cache first
     const cachedUser = cache.users.get(userId);
     if (cachedUser && Date.now() - cachedUser.timestamp < CACHE_DURATION) {
       // Update component state cache
@@ -195,7 +268,7 @@ const Home = () => {
       console.error(`Error fetching user data for ${userId}:`, error);
       return userId;
     }
-  }, [cma, sdk.ids.space, userCache]);
+  }, [cma, sdk.ids.space]);
 
   // Add a function to fetch content types with caching
   const getContentTypes = useCallback(async () => {
@@ -292,11 +365,39 @@ const Home = () => {
     authors: string[];
   }>({ authorData: [], authorUpdatedData: [], authors: [] });
 
+  // Check for cached data on component mount
+  useEffect(() => {
+    const { data: cachedData, isValid } = loadDashboardDataFromCache();
+    if (isValid && cachedData) {
+      setHasLoadedData(true);
+    }
+  }, []);
+
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
         setIsLoading(true);
         setError(null);
+
+        // Check if we should use cached data
+        if (!forceRefresh && hasLoadedData) {
+          const { data: cachedData, isValid } = loadDashboardDataFromCache();
+          if (isValid && cachedData) {
+            // Load data from cache
+            setStats(cachedData.stats);
+            setChartData(cachedData.chartData);
+            setUpdatedChartData(cachedData.updatedChartData);
+            setScheduledReleases(cachedData.scheduledReleases);
+            setUserCache(cachedData.userCache);
+            setScheduledContent(cachedData.scheduledContent);
+            setRecentlyPublishedContent(cachedData.recentlyPublishedContent);
+            setNeedsUpdateContent(cachedData.needsUpdateContent);
+            setContentTypeChartData(cachedData.contentTypeChartData);
+            setAuthorChartData(cachedData.authorChartData);
+            setIsLoading(false);
+            return;
+          }
+        }
         
         // Make initial API calls in parallel
         const [
@@ -616,12 +717,35 @@ const Home = () => {
             }));
         };
 
-        setAuthorChartData({
+        const finalAuthorChartData = {
           authorData: convertMapToChartData(authorData),
           authorUpdatedData: convertMapToChartData(authorUpdatedData),
           authors: Array.from(authors)
-        });
+        };
+
+        setAuthorChartData(finalAuthorChartData);
         
+        // Save all data to cache
+        const dashboardData: DashboardData = {
+          stats: updatedStats,
+          chartData: chartDataFromApi.newContent,
+          updatedChartData: chartDataFromApi.updatedContent,
+          scheduledReleases: releasesData,
+          userCache,
+          scheduledContent: scheduled,
+          recentlyPublishedContent: recentlyPublishedResponse.items,
+          needsUpdateContent: needsUpdateResponse.items,
+          contentTypeChartData: {
+            contentTypeData: contentTypeDataFromApi.contentTypeData,
+            contentTypeUpdatedData: contentTypeDataFromApi.contentTypeUpdatedData,
+            contentTypes: contentTypeDataFromApi.contentTypes
+          },
+          authorChartData: finalAuthorChartData
+        };
+        
+        saveDashboardDataToCache(dashboardData);
+        setHasLoadedData(true);
+        setForceRefresh(false);
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching content stats:', error);
@@ -631,7 +755,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -683,7 +807,10 @@ const Home = () => {
         <div className="flex justify-between items-center">
           <h1 className="text-4xl font-bold">Content Dashboard</h1>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              clearDashboardCache();
+              setForceRefresh(true);
+            }}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
             title="Refresh dashboard"
             disabled={isLoading}
