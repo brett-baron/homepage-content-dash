@@ -613,7 +613,82 @@ const Home = () => {
           contentTypes: contentTypeDataFromApi.contentTypes
         });
         
-        // Process author data from recentlyPublishedResponse and needsUpdateResponse
+        // Fetch comprehensive author data using the same approach as the main chart
+        // This ensures author chart matches the total published content numbers
+        const currentDate = new Date();
+        const startDate = new Date(currentDate);
+        startDate.setMonth(currentDate.getMonth() - 12); // Get last 12 months like the main chart
+        startDate.setDate(1);
+        startDate.setHours(0, 0, 0, 0);
+
+        // Fetch all published entries for author analysis (same as main chart)
+        const fetchAllPublishedForAuthors = async () => {
+          const allEntries = [];
+          let skip = 0;
+          const limit = 1000;
+          
+          while (true) {
+            const response = await cma.entry.getMany({
+              spaceId: sdk.ids.space,
+              environmentId: sdk.ids.environment,
+              query: {
+                'sys.publishedAt[gte]': startDate.toISOString(),
+                'sys.publishedAt[exists]': true,
+                skip,
+                limit,
+                order: 'sys.publishedAt'
+              }
+            });
+            
+            allEntries.push(...response.items);
+            
+            if (response.items.length < limit) {
+              break;
+            }
+            
+            skip += limit;
+          }
+          
+          return allEntries;
+        };
+
+        // Fetch all new content for author analysis (same as main chart)
+        const fetchAllNewContentForAuthors = async () => {
+          const allEntries = [];
+          let skip = 0;
+          const limit = 1000;
+          
+          while (true) {
+            const response = await cma.entry.getMany({
+              spaceId: sdk.ids.space,
+              environmentId: sdk.ids.environment,
+              query: {
+                'sys.firstPublishedAt[gte]': startDate.toISOString(),
+                'sys.publishedAt[exists]': true,
+                skip,
+                limit,
+                order: 'sys.firstPublishedAt'
+              }
+            });
+            
+            allEntries.push(...response.items);
+            
+            if (response.items.length < limit) {
+              break;
+            }
+            
+            skip += limit;
+          }
+          
+          return allEntries;
+        };
+
+        // Fetch the comprehensive datasets
+        const [allNewContentEntries, allPublishedEntries] = await Promise.all([
+          fetchAllNewContentForAuthors(),
+          fetchAllPublishedForAuthors()
+        ]);
+
         const authorData = new Map<string, Map<string, number>>();
         const authorUpdatedData = new Map<string, Map<string, number>>();
         const authors = new Set<string>();
@@ -622,12 +697,10 @@ const Home = () => {
         const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
           for (const entry of entries) {
             // For new content: use firstPublishedAt
-            // For updated content: use publishedAt or updatedAt (whichever is more recent)
+            // For updated content: use publishedAt
             const date = new Date(
               useUpdateDate 
-                ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0) 
-                  ? entry.sys.publishedAt 
-                  : entry.sys.updatedAt)
+                ? entry.sys.publishedAt
                 : (entry.sys.firstPublishedAt || entry.sys.publishedAt)
             );
             
@@ -636,13 +709,8 @@ const Home = () => {
             // Skip if the entry doesn't have the required date
             if (!date) continue;
 
-            // For new content: use publishedBy (or fall back to createdBy)
-            // For updated content: use updatedBy for updates, publishedBy for new publishes
-            const authorId = useUpdateDate
-              ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0)
-                ? entry.sys.publishedBy?.sys.id
-                : entry.sys.updatedBy?.sys.id)
-              : (entry.sys.publishedBy?.sys.id || entry.sys.createdBy?.sys.id);
+            // Always use createdBy to show who originally created the content
+            const authorId = entry.sys.createdBy?.sys.id;
 
             if (!authorId) continue;
             
@@ -662,30 +730,9 @@ const Home = () => {
           }
         };
 
-        // Process entries for both new and updated content
-        // For new content: only count first publications
-        const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
-          .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
-          .sort((a, b) => new Date((a.sys.firstPublishedAt || a.sys.publishedAt)!).getTime() - new Date((b.sys.firstPublishedAt || b.sys.publishedAt)!).getTime());
-
-        await processEntriesByAuthor(publishedEntries, authorData, false);
-
-        // For updated content: count both new publications and updates
-        const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
-          .filter(entry => entry.sys.publishedAt || entry.sys.updatedAt)
-          .sort((a, b) => {
-            const aDate = new Date(Math.max(
-              new Date(a.sys.publishedAt || 0).getTime(),
-              new Date(a.sys.updatedAt || 0).getTime()
-            ));
-            const bDate = new Date(Math.max(
-              new Date(b.sys.publishedAt || 0).getTime(),
-              new Date(b.sys.updatedAt || 0).getTime()
-            ));
-            return aDate.getTime() - bDate.getTime();
-          });
-
-        await processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
+        // Process the comprehensive datasets
+        await processEntriesByAuthor(allNewContentEntries, authorData, false);
+        await processEntriesByAuthor(allPublishedEntries, authorUpdatedData, true);
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {

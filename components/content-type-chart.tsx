@@ -30,7 +30,7 @@ interface ContentTypeChartProps {
   contentTypes: string[];
   selectedTimeRange: 'all' | 'year' | '6months';
   selectedContentType: 'new' | 'updated';
-  title?: 'Content Types' | 'Authors';
+  title?: 'Content Types' | 'Authors' | 'Creators';
 }
 
 // Custom tooltip component
