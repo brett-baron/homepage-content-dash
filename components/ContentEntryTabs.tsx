@@ -18,7 +18,7 @@ interface ContentEntryTabsProps {
 interface TransformedEntry {
   id: string;
   title: string;
-  author: string;
+  author: string; // Keep as 'author' for internal consistency with existing code
   status: string;
   workflow: string;
   stage: string;

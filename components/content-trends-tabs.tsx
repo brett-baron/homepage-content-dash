@@ -48,7 +48,7 @@ export default function ContentTrendsTabs({
           <TabsList className="bg-muted h-10">
             <TabsTrigger value="overall">Overall Trends</TabsTrigger>
             <TabsTrigger value="by-type">By Content Type</TabsTrigger>
-            <TabsTrigger value="by-author">By Author</TabsTrigger>
+            <TabsTrigger value="by-author">By Creator</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-4">
             {/* Content type selector - shown for both tabs */}
@@ -109,7 +109,7 @@ export default function ContentTrendsTabs({
             contentTypes={authors}
             selectedTimeRange={timeRange}
             selectedContentType={contentView}
-            title="Authors"
+            title="Creators"
           />
         </TabsContent>
       </Tabs>

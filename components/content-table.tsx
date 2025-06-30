@@ -39,7 +39,7 @@ import { ArchiveIcon, RotateCcw } from "lucide-react";
 interface ContentItem {
   id: string
   title: string | React.ReactNode
-  author: string
+  author: string // Keep as 'author' for internal consistency with existing code
   status: string
   workflow: string
   stage: string
@@ -520,7 +520,7 @@ export function ContentTable({
                 </>
               ) : (
                 <>
-                  <TableHead>Author</TableHead>
+                  <TableHead>Creator</TableHead>
                   {showStage && <TableHead>Status</TableHead>}
                   <TableHead>Content Type</TableHead>
                   {showAge && <TableHead>Age</TableHead>}

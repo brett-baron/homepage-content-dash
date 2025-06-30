@@ -30,17 +30,93 @@ interface ContentType {
   };
 }
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_DURATION = 20 * 60 * 1000; // 20 minutes in milliseconds
+const DASHBOARD_CACHE_KEY = 'contentDashboard_cachedData';
+const DASHBOARD_CACHE_TIMESTAMP_KEY = 'contentDashboard_cacheTimestamp';
 
 interface CachedData<T> {
   data: T;
   timestamp: number;
 }
 
+interface DashboardData {
+  stats: {
+    totalPublished: number;
+    percentChange: number;
+    scheduledCount: number;
+    recentlyPublishedCount: number;
+    needsUpdateCount: number;
+    previousMonthPublished: number;
+    averageTimeToPublish: number;
+  };
+  chartData: Array<{ date: string; count: number }>;
+  updatedChartData: Array<{ date: string; count: number }>;
+  scheduledReleases: ScheduledRelease[];
+  userCache: UserCache;
+  scheduledContent: EntryProps[];
+  recentlyPublishedContent: EntryProps[];
+  needsUpdateContent: EntryProps[];
+  contentTypeChartData: {
+    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypes: string[];
+  };
+  authorChartData: {
+    authorData: Array<{ date: string; [key: string]: string | number }>;
+    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    authors: string[];
+  };
+}
+
 // Add before the Home component
 const cache = {
   users: new Map<string, CachedData<string>>(),
   contentTypes: new Map<string, CachedData<any>>(),
+};
+
+// Helper functions for dashboard data caching
+const saveDashboardDataToCache = (data: DashboardData) => {
+  try {
+    sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
+    sessionStorage.setItem(DASHBOARD_CACHE_TIMESTAMP_KEY, Date.now().toString());
+  } catch (error) {
+    console.warn('Failed to save dashboard data to cache:', error);
+  }
+};
+
+const loadDashboardDataFromCache = (): { data: DashboardData | null; isValid: boolean } => {
+  try {
+    const cachedData = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+    const cacheTimestamp = sessionStorage.getItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+    
+    if (!cachedData || !cacheTimestamp) {
+      return { data: null, isValid: false };
+    }
+    
+    const timestamp = parseInt(cacheTimestamp, 10);
+    const isValid = Date.now() - timestamp < CACHE_DURATION;
+    
+    if (!isValid) {
+      clearDashboardCache();
+      return { data: null, isValid: false };
+    }
+    
+    const data = JSON.parse(cachedData) as DashboardData;
+    return { data, isValid: true };
+  } catch (error) {
+    console.warn('Failed to load dashboard data from cache:', error);
+    clearDashboardCache();
+    return { data: null, isValid: false };
+  }
+};
+
+const clearDashboardCache = () => {
+  try {
+    sessionStorage.removeItem(DASHBOARD_CACHE_KEY);
+    sessionStorage.removeItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+  } catch (error) {
+    console.warn('Failed to clear dashboard cache:', error);
+  }
 };
 
 interface DashboardAppInstallationParameters {
@@ -81,6 +157,8 @@ const Home = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [defaultTimeRange, setDefaultTimeRange] = useState<'all' | 'year' | '6months'>('year');
+  const [hasLoadedData, setHasLoadedData] = useState<boolean>(false);
+  const [forceRefresh, setForceRefresh] = useState<boolean>(false);
 
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
@@ -148,12 +226,7 @@ const Home = () => {
 
   // Fix the getUserFullName function to use getManyForSpace
   const getUserFullName = useCallback(async (userId: string): Promise<string> => {
-    // Check memory cache first
-    if (userCache[userId]) {
-      return userCache[userId];
-    }
-
-    // Check cache
+    // Check cache first
     const cachedUser = cache.users.get(userId);
     if (cachedUser && Date.now() - cachedUser.timestamp < CACHE_DURATION) {
       // Update component state cache
@@ -195,7 +268,7 @@ const Home = () => {
       console.error(`Error fetching user data for ${userId}:`, error);
       return userId;
     }
-  }, [cma, sdk.ids.space, userCache]);
+  }, [cma, sdk.ids.space]);
 
   // Add a function to fetch content types with caching
   const getContentTypes = useCallback(async () => {
@@ -292,11 +365,39 @@ const Home = () => {
     authors: string[];
   }>({ authorData: [], authorUpdatedData: [], authors: [] });
 
+  // Check for cached data on component mount
+  useEffect(() => {
+    const { data: cachedData, isValid } = loadDashboardDataFromCache();
+    if (isValid && cachedData) {
+      setHasLoadedData(true);
+    }
+  }, []);
+
   useEffect(() => {
     const fetchContentStats = async () => {
       try {
         setIsLoading(true);
         setError(null);
+
+        // Check if we should use cached data
+        if (!forceRefresh && hasLoadedData) {
+          const { data: cachedData, isValid } = loadDashboardDataFromCache();
+          if (isValid && cachedData) {
+            // Load data from cache
+            setStats(cachedData.stats);
+            setChartData(cachedData.chartData);
+            setUpdatedChartData(cachedData.updatedChartData);
+            setScheduledReleases(cachedData.scheduledReleases);
+            setUserCache(cachedData.userCache);
+            setScheduledContent(cachedData.scheduledContent);
+            setRecentlyPublishedContent(cachedData.recentlyPublishedContent);
+            setNeedsUpdateContent(cachedData.needsUpdateContent);
+            setContentTypeChartData(cachedData.contentTypeChartData);
+            setAuthorChartData(cachedData.authorChartData);
+            setIsLoading(false);
+            return;
+          }
+        }
         
         // Make initial API calls in parallel
         const [
@@ -512,7 +613,82 @@ const Home = () => {
           contentTypes: contentTypeDataFromApi.contentTypes
         });
         
-        // Process author data from recentlyPublishedResponse and needsUpdateResponse
+        // Fetch comprehensive author data using the same approach as the main chart
+        // This ensures author chart matches the total published content numbers
+        const currentDate = new Date();
+        const startDate = new Date(currentDate);
+        startDate.setMonth(currentDate.getMonth() - 12); // Get last 12 months like the main chart
+        startDate.setDate(1);
+        startDate.setHours(0, 0, 0, 0);
+
+        // Fetch all published entries for author analysis (same as main chart)
+        const fetchAllPublishedForAuthors = async () => {
+          const allEntries = [];
+          let skip = 0;
+          const limit = 1000;
+          
+          while (true) {
+            const response = await cma.entry.getMany({
+              spaceId: sdk.ids.space,
+              environmentId: sdk.ids.environment,
+              query: {
+                'sys.publishedAt[gte]': startDate.toISOString(),
+                'sys.publishedAt[exists]': true,
+                skip,
+                limit,
+                order: 'sys.publishedAt'
+              }
+            });
+            
+            allEntries.push(...response.items);
+            
+            if (response.items.length < limit) {
+              break;
+            }
+            
+            skip += limit;
+          }
+          
+          return allEntries;
+        };
+
+        // Fetch all new content for author analysis (same as main chart)
+        const fetchAllNewContentForAuthors = async () => {
+          const allEntries = [];
+          let skip = 0;
+          const limit = 1000;
+          
+          while (true) {
+            const response = await cma.entry.getMany({
+              spaceId: sdk.ids.space,
+              environmentId: sdk.ids.environment,
+              query: {
+                'sys.firstPublishedAt[gte]': startDate.toISOString(),
+                'sys.publishedAt[exists]': true,
+                skip,
+                limit,
+                order: 'sys.firstPublishedAt'
+              }
+            });
+            
+            allEntries.push(...response.items);
+            
+            if (response.items.length < limit) {
+              break;
+            }
+            
+            skip += limit;
+          }
+          
+          return allEntries;
+        };
+
+        // Fetch the comprehensive datasets
+        const [allNewContentEntries, allPublishedEntries] = await Promise.all([
+          fetchAllNewContentForAuthors(),
+          fetchAllPublishedForAuthors()
+        ]);
+
         const authorData = new Map<string, Map<string, number>>();
         const authorUpdatedData = new Map<string, Map<string, number>>();
         const authors = new Set<string>();
@@ -521,12 +697,10 @@ const Home = () => {
         const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
           for (const entry of entries) {
             // For new content: use firstPublishedAt
-            // For updated content: use publishedAt or updatedAt (whichever is more recent)
+            // For updated content: use publishedAt
             const date = new Date(
               useUpdateDate 
-                ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0) 
-                  ? entry.sys.publishedAt 
-                  : entry.sys.updatedAt)
+                ? entry.sys.publishedAt
                 : (entry.sys.firstPublishedAt || entry.sys.publishedAt)
             );
             
@@ -535,13 +709,8 @@ const Home = () => {
             // Skip if the entry doesn't have the required date
             if (!date) continue;
 
-            // For new content: use publishedBy (or fall back to createdBy)
-            // For updated content: use updatedBy for updates, publishedBy for new publishes
-            const authorId = useUpdateDate
-              ? (new Date(entry.sys.publishedAt || 0) > new Date(entry.sys.updatedAt || 0)
-                ? entry.sys.publishedBy?.sys.id
-                : entry.sys.updatedBy?.sys.id)
-              : (entry.sys.publishedBy?.sys.id || entry.sys.createdBy?.sys.id);
+            // Always use createdBy to show who originally created the content
+            const authorId = entry.sys.createdBy?.sys.id;
 
             if (!authorId) continue;
             
@@ -561,30 +730,9 @@ const Home = () => {
           }
         };
 
-        // Process entries for both new and updated content
-        // For new content: only count first publications
-        const publishedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
-          .filter(entry => entry.sys.firstPublishedAt || entry.sys.publishedAt)
-          .sort((a, b) => new Date((a.sys.firstPublishedAt || a.sys.publishedAt)!).getTime() - new Date((b.sys.firstPublishedAt || b.sys.publishedAt)!).getTime());
-
-        await processEntriesByAuthor(publishedEntries, authorData, false);
-
-        // For updated content: count both new publications and updates
-        const updatedEntries = [...recentlyPublishedResponse.items, ...needsUpdateResponse.items]
-          .filter(entry => entry.sys.publishedAt || entry.sys.updatedAt)
-          .sort((a, b) => {
-            const aDate = new Date(Math.max(
-              new Date(a.sys.publishedAt || 0).getTime(),
-              new Date(a.sys.updatedAt || 0).getTime()
-            ));
-            const bDate = new Date(Math.max(
-              new Date(b.sys.publishedAt || 0).getTime(),
-              new Date(b.sys.updatedAt || 0).getTime()
-            ));
-            return aDate.getTime() - bDate.getTime();
-          });
-
-        await processEntriesByAuthor(updatedEntries, authorUpdatedData, true);
+        // Process the comprehensive datasets
+        await processEntriesByAuthor(allNewContentEntries, authorData, false);
+        await processEntriesByAuthor(allPublishedEntries, authorUpdatedData, true);
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
@@ -616,12 +764,35 @@ const Home = () => {
             }));
         };
 
-        setAuthorChartData({
+        const finalAuthorChartData = {
           authorData: convertMapToChartData(authorData),
           authorUpdatedData: convertMapToChartData(authorUpdatedData),
           authors: Array.from(authors)
-        });
+        };
+
+        setAuthorChartData(finalAuthorChartData);
         
+        // Save all data to cache
+        const dashboardData: DashboardData = {
+          stats: updatedStats,
+          chartData: chartDataFromApi.newContent,
+          updatedChartData: chartDataFromApi.updatedContent,
+          scheduledReleases: releasesData,
+          userCache,
+          scheduledContent: scheduled,
+          recentlyPublishedContent: recentlyPublishedResponse.items,
+          needsUpdateContent: needsUpdateResponse.items,
+          contentTypeChartData: {
+            contentTypeData: contentTypeDataFromApi.contentTypeData,
+            contentTypeUpdatedData: contentTypeDataFromApi.contentTypeUpdatedData,
+            contentTypes: contentTypeDataFromApi.contentTypes
+          },
+          authorChartData: finalAuthorChartData
+        };
+        
+        saveDashboardDataToCache(dashboardData);
+        setHasLoadedData(true);
+        setForceRefresh(false);
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching content stats:', error);
@@ -631,7 +802,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -683,7 +854,10 @@ const Home = () => {
         <div className="flex justify-between items-center">
           <h1 className="text-4xl font-bold">Content Dashboard</h1>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              clearDashboardCache();
+              setForceRefresh(true);
+            }}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
             title="Refresh dashboard"
             disabled={isLoading}
@@ -797,15 +971,27 @@ const Home = () => {
             {showUpcomingReleases && (
               <div className="flex flex-col gap-2 md:gap-4">
                 <h2 className="text-xl font-semibold">Upcoming Scheduled Releases</h2>
-                <ContentTable
-                  data={scheduledReleases}
-                  showItemCount={true}
-                  showUpdatedAt={true}
-                  showUpdatedBy={true}
-                  onReschedule={handleRescheduleRelease}
-                  onCancel={handleCancelRelease}
-                  hideActions={false}
-                />
+                {scheduledReleases.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <CalendarDays className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                      <h3 className="text-lg font-medium text-muted-foreground mb-2">No scheduled releases</h3>
+                      <p className="text-sm text-muted-foreground/80 text-center max-w-md">
+                        Releases will appear here when they are scheduled.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ContentTable
+                    data={scheduledReleases}
+                    showItemCount={true}
+                    showUpdatedAt={true}
+                    showUpdatedBy={true}
+                    onReschedule={handleRescheduleRelease}
+                    onCancel={handleCancelRelease}
+                    hideActions={false}
+                  />
+                )}
               </div>
             )}
 
