@@ -1,15 +1,14 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { HomeAppSDK } from '@contentful/app-sdk';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
-import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer } from "lucide-react"
+import { CalendarDays, Clock, Edit, FileText, RefreshCw, Timer } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentTrendsTabs from "@/components/content-trends-tabs"
-import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish, fetchContentTypeChartData } from '../../utils/contentful';
-import { CachedAnalyticsService } from "../../utils/serverlessAnalytics";
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
 import { formatPercentageChange } from "../../utils/calculations"
+import { CachedAnalyticsService } from "../../utils/serverlessAnalytics"
 
 interface ScheduledRelease {
   id: string;
@@ -22,103 +21,8 @@ interface ScheduledRelease {
 }
 
 interface UserCache {
-  [key: string]: string;  // userId -> user's full name
+  [key: string]: string;
 }
-
-interface ContentType {
-  sys: {
-    id: string;
-  };
-}
-
-const CACHE_DURATION = 20 * 60 * 1000; // 20 minutes in milliseconds
-const DASHBOARD_CACHE_KEY = 'contentDashboard_cachedData';
-const DASHBOARD_CACHE_TIMESTAMP_KEY = 'contentDashboard_cacheTimestamp';
-
-interface CachedData<T> {
-  data: T;
-  timestamp: number;
-}
-
-interface DashboardData {
-  stats: {
-    totalPublished: number;
-    percentChange: number;
-    scheduledCount: number;
-    recentlyPublishedCount: number;
-    needsUpdateCount: number;
-    previousMonthPublished: number;
-    averageTimeToPublish: number;
-  };
-  chartData: Array<{ date: string; count: number }>;
-  updatedChartData: Array<{ date: string; count: number }>;
-  scheduledReleases: ScheduledRelease[];
-  userCache: UserCache;
-  scheduledContent: EntryProps[];
-  recentlyPublishedContent: EntryProps[];
-  needsUpdateContent: EntryProps[];
-  contentTypeChartData: {
-    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
-    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
-    contentTypes: string[];
-  };
-  authorChartData: {
-    authorData: Array<{ date: string; [key: string]: string | number }>;
-    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
-    authors: string[];
-  };
-}
-
-// Add before the Home component
-const cache = {
-  users: new Map<string, CachedData<string>>(),
-  contentTypes: new Map<string, CachedData<any>>(),
-};
-
-// Helper functions for dashboard data caching
-const saveDashboardDataToCache = (data: DashboardData) => {
-  try {
-    sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
-    sessionStorage.setItem(DASHBOARD_CACHE_TIMESTAMP_KEY, Date.now().toString());
-  } catch (error) {
-    console.warn('Failed to save dashboard data to cache:', error);
-  }
-};
-
-const loadDashboardDataFromCache = (): { data: DashboardData | null; isValid: boolean } => {
-  try {
-    const cachedData = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
-    const cacheTimestamp = sessionStorage.getItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
-    
-    if (!cachedData || !cacheTimestamp) {
-      return { data: null, isValid: false };
-    }
-    
-    const timestamp = parseInt(cacheTimestamp, 10);
-    const isValid = Date.now() - timestamp < CACHE_DURATION;
-    
-    if (!isValid) {
-      clearDashboardCache();
-      return { data: null, isValid: false };
-    }
-    
-    const data = JSON.parse(cachedData) as DashboardData;
-    return { data, isValid: true };
-  } catch (error) {
-    console.warn('Failed to load dashboard data from cache:', error);
-    clearDashboardCache();
-    return { data: null, isValid: false };
-  }
-};
-
-const clearDashboardCache = () => {
-  try {
-    sessionStorage.removeItem(DASHBOARD_CACHE_KEY);
-    sessionStorage.removeItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
-  } catch (error) {
-    console.warn('Failed to clear dashboard cache:', error);
-  }
-};
 
 interface DashboardAppInstallationParameters {
   trackedContentTypes: string[];
@@ -129,12 +33,13 @@ interface DashboardAppInstallationParameters {
   timeToPublishDays: number;
 }
 
-const Home = () => {
+const HomeServerless = () => {
   const sdk = useSDK<HomeAppSDK>();
   const cma = useCMA();
   
-  // Enable serverless analytics
+  // Analytics service
   const [analyticsService] = useState(() => new CachedAnalyticsService(sdk));
+  
   const [stats, setStats] = useState({
     totalPublished: 0,
     percentChange: 0,
@@ -144,35 +49,49 @@ const Home = () => {
     previousMonthPublished: 0,
     averageTimeToPublish: 0,
   });
+  
   const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
   const [updatedChartData, setUpdatedChartData] = useState<Array<{ date: string; count: number }>>([]);
   const [scheduledReleases, setScheduledReleases] = useState<ScheduledRelease[]>([]);
   const [userCache, setUserCache] = useState<UserCache>({});
   
-  // New state for content entries
+  // Content entries - these are still fetched directly for display purposes
   const [scheduledContent, setScheduledContent] = useState<EntryProps[]>([]);
   const [recentlyPublishedContent, setRecentlyPublishedContent] = useState<EntryProps[]>([]);
   const [needsUpdateContent, setNeedsUpdateContent] = useState<EntryProps[]>([]);
+  
+  // Configuration
   const [trackedContentTypes, setTrackedContentTypes] = useState<string[]>([]);
   const [needsUpdateMonths, setNeedsUpdateMonths] = useState<number>(6);
   const [recentlyPublishedDays, setRecentlyPublishedDays] = useState<number>(7);
   const [showUpcomingReleases, setShowUpcomingReleases] = useState<boolean>(true);
   const [timeToPublishDays, setTimeToPublishDays] = useState<number>(30);
+  const [defaultTimeRange, setDefaultTimeRange] = useState<'all' | 'year' | '6months'>('year');
+  
+  // Loading states
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [defaultTimeRange, setDefaultTimeRange] = useState<'all' | 'year' | '6months'>('year');
-  const [hasLoadedData, setHasLoadedData] = useState<boolean>(false);
-  const [forceRefresh, setForceRefresh] = useState<boolean>(false);
-
-  // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
   const loadingTimerRef = useRef<NodeJS.Timeout>();
 
-  // Effect to load app installation parameters
+  // Content type chart data
+  const [contentTypeChartData, setContentTypeChartData] = useState<{
+    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    contentTypes: string[];
+  }>({ contentTypeData: [], contentTypeUpdatedData: [], contentTypes: [] });
+
+  // Author chart data
+  const [authorChartData, setAuthorChartData] = useState<{
+    authorData: Array<{ date: string; [key: string]: string | number }>;
+    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
+    authors: string[];
+  }>({ authorData: [], authorUpdatedData: [], authors: [] });
+
+  // Load app parameters
   useEffect(() => {
     const loadAppParameters = async () => {
       try {
-        // Try to get parameters from localStorage first
         const storedConfig = localStorage.getItem('contentDashboardConfig');
         if (storedConfig) {
           const parsedConfig = JSON.parse(storedConfig) as DashboardAppInstallationParameters;
@@ -185,7 +104,7 @@ const Home = () => {
           return;
         }
 
-        // If not in localStorage, use default values
+        // Set defaults
         setTrackedContentTypes([]);
         setNeedsUpdateMonths(6);
         setRecentlyPublishedDays(7);
@@ -194,20 +113,13 @@ const Home = () => {
         setDefaultTimeRange('year');
       } catch (error) {
         console.error('Error loading app parameters:', error);
-        // Use defaults if loading fails
-        setTrackedContentTypes([]);
-        setNeedsUpdateMonths(6);
-        setRecentlyPublishedDays(7);
-        setShowUpcomingReleases(true);
-        setTimeToPublishDays(30);
-        setDefaultTimeRange('year');
       }
     };
 
     loadAppParameters();
   }, []);
 
-  // Start loading timer when loading begins
+  // Loading timer
   useEffect(() => {
     if (isLoading) {
       const startTime = Date.now();
@@ -228,21 +140,13 @@ const Home = () => {
     };
   }, [isLoading]);
 
-  // Fix the getUserFullName function to use getManyForSpace
+  // User cache function
   const getUserFullName = useCallback(async (userId: string): Promise<string> => {
-    // Check cache first
-    const cachedUser = cache.users.get(userId);
-    if (cachedUser && Date.now() - cachedUser.timestamp < CACHE_DURATION) {
-      // Update component state cache
-      setUserCache(prev => ({
-        ...prev,
-        [userId]: cachedUser.data
-      }));
-      return cachedUser.data;
+    if (userCache[userId]) {
+      return userCache[userId];
     }
 
     try {
-      // Use getManyForSpace instead of getMany
       const users = await cma.user.getManyForSpace({
         spaceId: sdk.ids.space
       });
@@ -256,12 +160,6 @@ const Home = () => {
         ? `${user.firstName} ${user.lastName}`
         : user.email || userId;
 
-      // Update both caches
-      cache.users.set(userId, {
-        data: fullName,
-        timestamp: Date.now()
-      });
-
       setUserCache(prev => ({
         ...prev,
         [userId]: fullName
@@ -272,137 +170,15 @@ const Home = () => {
       console.error(`Error fetching user data for ${userId}:`, error);
       return userId;
     }
-  }, [cma, sdk.ids.space]);
+  }, [cma, sdk.ids.space, userCache]);
 
-  // Add a function to fetch content types with caching
-  const getContentTypes = useCallback(async () => {
-    const cacheKey = `${sdk.ids.space}-${sdk.ids.environment}`;
-    const cachedTypes = cache.contentTypes.get(cacheKey);
-    
-    if (cachedTypes && Date.now() - cachedTypes.timestamp < CACHE_DURATION) {
-      return cachedTypes.data;
-    }
-
-    const contentTypesResponse = await cma.contentType.getMany({
-      spaceId: sdk.ids.space,
-      environmentId: sdk.ids.environment
-    });
-
-    cache.contentTypes.set(cacheKey, {
-      data: contentTypesResponse,
-      timestamp: Date.now()
-    });
-
-    return contentTypesResponse;
-  }, [cma, sdk.ids.space, sdk.ids.environment]);
-
-  // Update the fetchAppInstallationParameters function to use cached content types
-  const fetchAppInstallationParameters = useCallback(async () => {
-    try {
-      const storedConfig = localStorage.getItem('contentDashboardConfig');
-      
-      if (storedConfig) {
-        try {
-          const parsedConfig = JSON.parse(storedConfig) as DashboardAppInstallationParameters;
-          
-          if (parsedConfig.trackedContentTypes && Array.isArray(parsedConfig.trackedContentTypes)) {
-            setTrackedContentTypes(parsedConfig.trackedContentTypes);
-          }
-          
-          if (parsedConfig.needsUpdateMonths && parsedConfig.needsUpdateMonths > 0) {
-            setNeedsUpdateMonths(parsedConfig.needsUpdateMonths);
-          }
-          
-          if (parsedConfig.recentlyPublishedDays && parsedConfig.recentlyPublishedDays > 0) {
-            setRecentlyPublishedDays(parsedConfig.recentlyPublishedDays);
-          }
-          
-          if (parsedConfig.showUpcomingReleases !== undefined) {
-            setShowUpcomingReleases(parsedConfig.showUpcomingReleases);
-          }
-
-          if (parsedConfig.timeToPublishDays && parsedConfig.timeToPublishDays > 0) {
-            setTimeToPublishDays(parsedConfig.timeToPublishDays);
-          }
-          
-          return;
-        } catch (e) {
-          console.error('Error parsing stored config:', e);
-        }
-      }
-      
-      // Get content types from cache or API
-      const contentTypesResponse = await getContentTypes();
-      const availableContentTypeIds = contentTypesResponse.items.map((ct: ContentType) => ct.sys.id);
-      
-      const defaultTrackedBase = ['page', 'settings', 'navigation', 'siteConfig'];
-      const defaultTracked = defaultTrackedBase.filter(id => 
-        availableContentTypeIds.includes(id)
-      );
-      
-      setTrackedContentTypes(defaultTracked);
-      
-      localStorage.setItem('contentDashboardConfig', JSON.stringify({ 
-        trackedContentTypes: defaultTracked,
-        needsUpdateMonths: 6,
-        recentlyPublishedDays: 7,
-        showUpcomingReleases: true,
-        timeToPublishDays: 30,
-        defaultTimeRange: 'year'
-      }));
-    } catch (error) {
-      console.error('Error setting up tracked content types:', error);
-      setTrackedContentTypes([]);
-    }
-  }, [getContentTypes]);
-
-  const [contentTypeChartData, setContentTypeChartData] = useState<{
-    contentTypeData: Array<{ date: string; [key: string]: string | number }>;
-    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
-    contentTypes: string[];
-  }>({ contentTypeData: [], contentTypeUpdatedData: [], contentTypes: [] });
-
-  // Add new state for author data
-  const [authorChartData, setAuthorChartData] = useState<{
-    authorData: Array<{ date: string; [key: string]: string | number }>;
-    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
-    authors: string[];
-  }>({ authorData: [], authorUpdatedData: [], authors: [] });
-
-  // Check for cached data on component mount
+  // Main data fetching effect using serverless functions
   useEffect(() => {
-    const { data: cachedData, isValid } = loadDashboardDataFromCache();
-    if (isValid && cachedData) {
-      setHasLoadedData(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const fetchContentStats = async () => {
+    const fetchContentData = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        // Check if we should use cached data
-        if (!forceRefresh && hasLoadedData) {
-          const { data: cachedData, isValid } = loadDashboardDataFromCache();
-          if (isValid && cachedData) {
-            // Load data from cache
-            setStats(cachedData.stats);
-            setChartData(cachedData.chartData);
-            setUpdatedChartData(cachedData.updatedChartData);
-            setScheduledReleases(cachedData.scheduledReleases);
-            setUserCache(cachedData.userCache);
-            setScheduledContent(cachedData.scheduledContent);
-            setRecentlyPublishedContent(cachedData.recentlyPublishedContent);
-            setNeedsUpdateContent(cachedData.needsUpdateContent);
-            setContentTypeChartData(cachedData.contentTypeChartData);
-            setAuthorChartData(cachedData.authorChartData);
-            setIsLoading(false);
-            return;
-          }
-        }
-        
         // Use serverless functions for heavy analytics processing
         const analyticsParams = {
           timeRange: defaultTimeRange,
@@ -412,58 +188,23 @@ const Home = () => {
           timeToPublishDays
         };
 
-        // Fetch analytics data from serverless functions and other data in parallel
+        // Fetch analytics data from serverless functions in parallel
         const [
           analyticsData,
-          scheduledActions,
+          // Still fetch some data directly for display purposes
+          scheduledActionsResponse,
           recentlyPublishedResponse,
           needsUpdateResponse
         ] = await Promise.all([
-          // Use serverless functions for heavy analytics
-          analyticsService.getBatchAnalytics(analyticsParams).catch(error => {
-            console.warn('Serverless analytics failed, falling back to client-side:', error);
-            // Fallback to original client-side processing
-            return Promise.all([
-              getContentStatsPaginated(
-                cma,
-                sdk.ids.space,
-                sdk.ids.environment,
-                [],
-                recentlyPublishedDays,
-                needsUpdateMonths,
-                trackedContentTypes
-              ),
-              fetchChartData(
-                cma,
-                sdk.ids.space,
-                sdk.ids.environment,
-                { monthsToShow: 12 }
-              ),
-              { authorData: [], authorUpdatedData: [], authors: [] },
-              fetchContentTypeChartData(
-                cma,
-                sdk.ids.space,
-                sdk.ids.environment,
-                { 
-                  trackedContentTypes,
-                  monthsToShow: 12
-                }
-              )
-            ]).then(([stats, chartData, authorData, contentTypeData]) => ({
-              stats: { ...stats, averageTimeToPublish: 0 },
-              chartData,
-              authorData,
-              contentTypeData
-            }));
-          }),
-          // Still fetch some data directly for display and releases
+          analyticsService.getBatchAnalytics(analyticsParams),
+          // Scheduled actions for releases
           cma.scheduledActions.getMany({
             spaceId: sdk.ids.space,
             query: {
               'environment.sys.id': sdk.ids.environment,
               'sys.status[in]': 'scheduled',
               'order': 'scheduledFor.datetime',
-              'limit': 500
+              'limit': 100
             }
           }),
           // Recently published content for display
@@ -489,13 +230,12 @@ const Home = () => {
           })
         ]);
 
-        // Process releases and scheduled entries
+        // Process scheduled releases (still done client-side for now)
         const now = new Date();
         const scheduledEntryIds = new Set<string>();
         const releaseIds = new Set<string>();
 
-        // First pass: collect all entry and release IDs
-        scheduledActions.items.forEach(action => {
+        scheduledActionsResponse.items.forEach(action => {
           if (action.sys.status === 'scheduled' && 
               new Date(action.scheduledFor.datetime) > now &&
               action.action === 'publish') {
@@ -512,7 +252,6 @@ const Home = () => {
         let releasesData: ScheduledRelease[] = [];
         if (releaseIds.size > 0) {
           try {
-            // Fetch releases
             const releases = await Promise.all(
               Array.from(releaseIds).map(releaseId => 
                 cma.release.get({
@@ -523,12 +262,10 @@ const Home = () => {
               )
             );
 
-            // Get all users for the space
             const users = await cma.user.getManyForSpace({
               spaceId: sdk.ids.space
             });
             
-            // Create user map
             const userMap = Object.fromEntries(
               users.items.map(user => [
                 user.sys.id,
@@ -538,7 +275,6 @@ const Home = () => {
               ])
             );
 
-            // Add release entries to scheduledEntryIds
             releases.forEach(release => {
               if (release.entities?.items) {
                 release.entities.items.forEach((entity: { sys: { id: string } }) => {
@@ -549,9 +285,8 @@ const Home = () => {
               }
             });
 
-            // Process releases data
             releasesData = releases.map(release => {
-              const scheduledAction = scheduledActions.items.find(
+              const scheduledAction = scheduledActionsResponse.items.find(
                 action => action.entity.sys.id === release.sys.id
               );
               return {
@@ -569,7 +304,7 @@ const Home = () => {
           }
         }
 
-        // Fetch scheduled entries if any exist
+        // Fetch scheduled entries
         let scheduled: EntryProps[] = [];
         if (scheduledEntryIds.size > 0) {
           const idArray = Array.from(scheduledEntryIds);
@@ -594,73 +329,51 @@ const Home = () => {
           scheduled = batchResults.flatMap(result => result.items);
         }
 
-        // Calculate total scheduled entries (direct entries + entries in releases)
-        const totalScheduledCount = scheduled.length;
-
         // Update states with serverless analytics data
-        const updatedStats = {
+        setStats({
           ...analyticsData.stats,
-          scheduledCount: totalScheduledCount // Override with actual scheduled count
-        };
-
-        // Update all states at once
-        setStats(updatedStats);
+          scheduledCount: scheduled.length // Override with actual scheduled count
+        });
         setChartData(analyticsData.chartData.newContent);
         setUpdatedChartData(analyticsData.chartData.updatedContent);
-        setScheduledReleases(releasesData);
-        setScheduledContent(scheduled);
-        setRecentlyPublishedContent(recentlyPublishedResponse.items);
-        setNeedsUpdateContent(needsUpdateResponse.items);
-        
-        // Update content type chart data
         setContentTypeChartData({
           contentTypeData: analyticsData.contentTypeData.contentTypeData,
           contentTypeUpdatedData: analyticsData.contentTypeData.contentTypeUpdatedData,
           contentTypes: analyticsData.contentTypeData.contentTypes
         });
+        setAuthorChartData(analyticsData.authorData);
         
-        // Set author chart data from serverless analytics
-        setAuthorChartData({
-          authorData: analyticsData.authorData.authorData,
-          authorUpdatedData: analyticsData.authorData.authorUpdatedData,
-          authors: analyticsData.authorData.authors
-        });
-        
-        // Save all data to cache
-        const dashboardData: DashboardData = {
-          stats: updatedStats,
-          chartData: analyticsData.chartData.newContent,
-          updatedChartData: analyticsData.chartData.updatedContent,
-          scheduledReleases: releasesData,
-          userCache,
-          scheduledContent: scheduled,
-          recentlyPublishedContent: recentlyPublishedResponse.items,
-          needsUpdateContent: needsUpdateResponse.items,
-          contentTypeChartData: {
-            contentTypeData: analyticsData.contentTypeData.contentTypeData,
-            contentTypeUpdatedData: analyticsData.contentTypeData.contentTypeUpdatedData,
-            contentTypes: analyticsData.contentTypeData.contentTypes
-          },
-          authorChartData: {
-            authorData: analyticsData.authorData.authorData,
-            authorUpdatedData: analyticsData.authorData.authorUpdatedData,
-            authors: analyticsData.authorData.authors
-          }
-        };
-        
-        saveDashboardDataToCache(dashboardData);
-        setHasLoadedData(true);
-        setForceRefresh(false);
+        // Set content for display
+        setScheduledReleases(releasesData);
+        setScheduledContent(scheduled);
+        setRecentlyPublishedContent(recentlyPublishedResponse.items);
+        setNeedsUpdateContent(needsUpdateResponse.items);
+
         setIsLoading(false);
       } catch (error) {
-        console.error('Error fetching content stats:', error);
+        console.error('Error fetching content data:', error);
         setError('Failed to load content data');
         setIsLoading(false);
       }
     };
 
-    fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData]);
+    fetchContentData();
+  }, [analyticsService, cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, defaultTimeRange]);
+
+  const handleRefresh = useCallback(() => {
+    analyticsService.clearCache();
+    // Trigger re-fetch by updating a dependency
+    setIsLoading(true);
+  }, [analyticsService]);
+
+  const handleOpenEntry = (entryId: string) => {
+    if (!sdk || !sdk.ids) return;
+    
+    const baseUrl = 'https://app.contentful.com';
+    const url = `${baseUrl}/spaces/${sdk.ids.space}/environments/${sdk.ids.environment}/entries/${entryId}`;
+    
+    window.open(url, '_blank');
+  };
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
@@ -674,14 +387,7 @@ const Home = () => {
     });
   };
 
-  const handleRefresh = useCallback(() => {
-    analyticsService.clearCache();
-    clearDashboardCache();
-    setForceRefresh(true);
-  }, [analyticsService]);
-
   const handleRescheduleRelease = async (releaseId: string, newDateTime: string) => {
-    // Refresh the releases data after rescheduling
     const updatedReleases = scheduledReleases.map(release => {
       if (release.id === releaseId) {
         return {
@@ -696,27 +402,14 @@ const Home = () => {
   };
 
   const handleCancelRelease = async (releaseId: string) => {
-    // Remove the canceled release from the list
     setScheduledReleases(prev => prev.filter(release => release.id !== releaseId));
-  };
-
-  // Function to open an entry in the Contentful web app
-  const handleOpenEntry = (entryId: string) => {
-    if (!sdk || !sdk.ids) return;
-    
-    // Construct the URL to the entry in the Contentful web app
-    const baseUrl = 'https://app.contentful.com';
-    const url = `${baseUrl}/spaces/${sdk.ids.space}/environments/${sdk.ids.environment}/entries/${entryId}`;
-    
-    // Open the entry in a new tab
-    window.open(url, '_blank');
   };
 
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex justify-between items-center">
-          <h1 className="text-4xl font-bold">Content Dashboard</h1>
+          <h1 className="text-4xl font-bold">Content Dashboard (Serverless)</h1>
           <button 
             onClick={handleRefresh}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-md hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50"
@@ -727,11 +420,15 @@ const Home = () => {
             <span className="text-sm text-gray-600">Refresh</span>
           </button>
         </div>
+        
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
             <div className="flex flex-col items-center">
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
-              <p className="mt-4 text-muted-foreground">Loading content data...</p>
+              <p className="mt-4 text-muted-foreground">Loading content data via serverless functions...</p>
+              {loadingTime > 0 && (
+                <p className="text-sm text-muted-foreground/60">Loading time: {loadingTime}s</p>
+              )}
             </div>
           </div>
         ) : error ? (
@@ -814,7 +511,7 @@ const Home = () => {
 
             {/* Content Publishing Trends Section */}
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Content Publishing Trends</h2>
+              <h2 className="text-xl font-semibold">Content Publishing Trends (Serverless)</h2>
               <ContentTrendsTabs
                 chartData={chartData}
                 updatedChartData={updatedChartData}
@@ -873,4 +570,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default HomeServerless; 

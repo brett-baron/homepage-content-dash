@@ -1,0 +1,21 @@
+{
+  "functions": [
+    {
+      "id": "contentAnalytics",
+      "name": "Content Analytics Function",
+      "description": "Serverless function to handle content analytics aggregation for large-scale spaces",
+      "path": "functions/contentAnalytics.js",
+      "entryFile": "functions/contentAnalytics.ts",
+      "allowNetworks": [],
+      "accepts": ["appaction.call"]
+    }
+  ],
+  "locations": [
+    {
+      "location": "app-config"
+    },
+    {
+      "location": "home"
+    }
+  ]
+} 
