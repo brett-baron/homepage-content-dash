@@ -23,13 +23,8 @@ interface ContentTypeChartProps {
     date: string;
     [key: string]: string | number;
   }>;
-  updatedData: Array<{
-    date: string;
-    [key: string]: string | number;
-  }>;
   contentTypes: string[];
   selectedTimeRange: 'all' | 'year' | '6months';
-  selectedContentType: 'new' | 'updated';
   title?: 'Content Types' | 'Authors' | 'Creators';
 }
 
@@ -80,10 +75,8 @@ type LabelProps = {
 
 export default function ContentTypeChart({
   data = [],
-  updatedData = [],
   contentTypes = [],
   selectedTimeRange,
-  selectedContentType,
   title = 'Content Types'
 }: ContentTypeChartProps) {
   const [filteredData, setFilteredData] = useState(data);
@@ -92,10 +85,7 @@ export default function ContentTypeChart({
   const [processedData, setProcessedData] = useState<Array<{ date: string; [key: string]: any; highestType?: string }>>([]);
 
   useEffect(() => {
-    // Select the appropriate data source based on selectedContentType
-    const sourceData = selectedContentType === 'new' ? data : updatedData;
-    
-    if (!sourceData || sourceData.length === 0) {
+    if (!data || data.length === 0) {
       console.log('No data available');
       return;
     }
@@ -105,23 +95,23 @@ export default function ContentTypeChart({
     const filterData = () => {
       switch (selectedTimeRange) {
         case 'all':
-          return [...sourceData];
+          return [...data];
         case 'year':
           const oneYearAgo = new Date(
             currentDate.getFullYear() - 1,
             currentDate.getMonth(),
             currentDate.getDate()
           );
-          return sourceData.filter(item => new Date(item.date) >= oneYearAgo);
+          return data.filter(item => new Date(item.date) >= oneYearAgo);
         case '6months':
           const sixMonthsAgo = new Date(
             currentDate.getFullYear(),
             currentDate.getMonth() - 6,
             currentDate.getDate()
           );
-          return sourceData.filter(item => new Date(item.date) >= sixMonthsAgo);
+          return data.filter(item => new Date(item.date) >= sixMonthsAgo);
         default:
-          return [...sourceData];
+          return [...data];
       }
     };
 
@@ -173,7 +163,7 @@ export default function ContentTypeChart({
     } else {
       setYAxisDomain([0, 20]);
     }
-  }, [data, updatedData, selectedTimeRange, selectedContentType, contentTypes]);
+  }, [data, selectedTimeRange, contentTypes]);
 
   return (
     <>

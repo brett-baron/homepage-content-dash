@@ -250,7 +250,6 @@ export const fetchChartData = async (
   } = {}
 ): Promise<{
   newContent: Array<{ date: string; count: number; percentChange?: number }>;
-  updatedContent: Array<{ date: string; count: number; percentChange?: number }>;
 }> => {
   // Use 1200 months (100 years) for "All Time" view
   const effectiveMonthsToShow = options.monthsToShow === null ? 1200 : (options.monthsToShow ?? 12);
@@ -262,7 +261,7 @@ export const fetchChartData = async (
   startDate.setDate(1);
   startDate.setHours(0, 0, 0, 0);  // Set to beginning of the day
 
-  // Create fetch functions for pagination
+  // Create fetch function for pagination
   const fetchNewContent = (skip: number, limit: number) =>
     cma.entry.getMany({
       spaceId,
@@ -276,35 +275,17 @@ export const fetchChartData = async (
       }
     });
 
-  const fetchAllPublished = (skip: number, limit: number) =>
-    cma.entry.getMany({
-      spaceId,
-      environmentId,
-      query: {
-        'sys.publishedAt[gte]': startDate.toISOString(),
-        'sys.publishedAt[exists]': true,
-        skip,
-        limit,
-        order: 'sys.publishedAt'
-      }
-    });
+  // Fetch all pages
+  const newContentItems = await fetchAllPages(fetchNewContent);
 
-  // Fetch all pages in parallel
-  const [newContentItems, allPublishedItems] = await Promise.all([
-    fetchAllPages(fetchNewContent),
-    fetchAllPages(fetchAllPublished)
-  ]);
-
-  // Create maps to store counts by month
+  // Create map to store counts by month
   const newContentCounts: Record<string, number> = {};
-  const updatedContentCounts: Record<string, number> = {};
   
   // Initialize all months with zero counts
   let currentMonth = new Date(startDate);
   while (currentMonth <= now) {
     const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
     newContentCounts[monthKey] = 0;
-    updatedContentCounts[monthKey] = 0;
     currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
 
@@ -319,18 +300,7 @@ export const fetchChartData = async (
     }
   });
 
-  // Count all published entries by month
-  (allPublishedItems as ContentfulEntry[]).forEach((entry) => {
-    if (entry.sys.publishedAt) {
-      const publishDate = new Date(entry.sys.publishedAt);
-      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
-      if (updatedContentCounts[monthKey] !== undefined) {
-        updatedContentCounts[monthKey]++;
-      }
-    }
-  });
-
-  // Process month counts (no changes needed here)
+  // Process month counts
   const processMonthCounts = (counts: Record<string, number>) => {
     return Object.entries(counts)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -347,8 +317,7 @@ export const fetchChartData = async (
   };
 
   return {
-    newContent: processMonthCounts(newContentCounts),
-    updatedContent: processMonthCounts(updatedContentCounts)
+    newContent: processMonthCounts(newContentCounts)
   };
 };
 
@@ -405,126 +374,100 @@ export const calculateAverageTimeToPublish = async (
 };
 
 // Update fetchContentTypeChartData to use monthsToShow
-export async function fetchContentTypeChartData(
+export const fetchContentTypeChartData = async (
   cma: any,
   spaceId: string,
   environmentId: string,
   options: {
-    trackedContentTypes: string[];
-    monthsToShow?: number;
-  }
-) {
-  try {
-    const { trackedContentTypes, monthsToShow = 12 } = options;
+    trackedContentTypes?: string[];
+    monthsToShow?: number | null;
+  } = {}
+): Promise<{
+  contentTypeData: Array<{ date: string; [key: string]: string | number }>;
+  contentTypes: string[];
+}> => {
+  const { trackedContentTypes = [], monthsToShow = 12 } = options;
+  
+  // Use 1200 months (100 years) for "All Time" view
+  const effectiveMonthsToShow = monthsToShow === null ? 1200 : monthsToShow;
 
-    // Get all entries with their publish dates
-    const publishedEntries = await cma.entry.getMany({
+  const now = new Date();
+  const startDate = new Date(now);
+  startDate.setMonth(now.getMonth() - effectiveMonthsToShow);
+  startDate.setDate(1);
+  startDate.setHours(0, 0, 0, 0);
+
+  // Only fetch new content
+  const fetchNewContent = (skip: number, limit: number) =>
+    cma.entry.getMany({
       spaceId,
       environmentId,
       query: {
+        'sys.firstPublishedAt[gte]': startDate.toISOString(),
         'sys.publishedAt[exists]': true,
-        'limit': 1000,
-        'order': 'sys.publishedAt'
+        skip,
+        limit,
+        order: 'sys.firstPublishedAt'
       }
     });
 
-    // Get all entries with their update dates
-    const updatedEntries = await cma.entry.getMany({
-      spaceId,
-      environmentId,
-      query: {
-        'sys.updatedAt[exists]': true,
-        'limit': 1000,
-        'order': 'sys.updatedAt'
-      }
-    });
+  // Fetch all pages
+  const newContentEntries = await fetchAllPages(fetchNewContent);
 
-    // Process entries by month for both new and updated content
-    const monthlyData: { [key: string]: { [key: string]: number } } = {};
-    const monthlyUpdatedData: { [key: string]: { [key: string]: number } } = {};
-    const contentTypes = new Set<string>();
+  // Create data structure to store monthly counts by content type
+  const monthlyData: { [key: string]: { [key: string]: number } } = {};
 
-    // Initialize all months with zero counts
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setMonth(now.getMonth() - monthsToShow); // Start from monthsToShow months ago
-    startDate.setDate(1); // Start from first day of month
-
-    let currentMonth = new Date(startDate);
-    while (currentMonth <= now) {
-      const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
-      monthlyData[monthKey] = {};
-      monthlyUpdatedData[monthKey] = {};
-      currentMonth.setMonth(currentMonth.getMonth() + 1);
-    }
-
-    // Process published entries
-    publishedEntries.items.forEach((entry: any) => {
-      const contentType = entry.sys.contentType.sys.id;
-      // Only include content types that are in the tracked list, or all if no specific types are tracked
-      if (trackedContentTypes.length === 0 || trackedContentTypes.includes(contentType)) {
-        const date = new Date(entry.sys.firstPublishedAt); // Use firstPublishedAt for new content
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-        
-        if (monthlyData[monthKey]) {
-          if (!monthlyData[monthKey][contentType]) {
-            monthlyData[monthKey][contentType] = 0;
-          }
-          monthlyData[monthKey][contentType]++;
-          contentTypes.add(contentType);
-        }
-      }
-    });
-
-    // Process updated entries
-    updatedEntries.items.forEach((entry: any) => {
-      const contentType = entry.sys.contentType.sys.id;
-      // Only include content types that are in the tracked list, or all if no specific types are tracked
-      if (trackedContentTypes.length === 0 || trackedContentTypes.includes(contentType)) {
-        const date = new Date(entry.sys.publishedAt); // Use publishedAt for updated content
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-        
-        if (monthlyUpdatedData[monthKey]) {
-          if (!monthlyUpdatedData[monthKey][contentType]) {
-            monthlyUpdatedData[monthKey][contentType] = 0;
-          }
-          monthlyUpdatedData[monthKey][contentType]++;
-          contentTypes.add(contentType);
-        }
-      }
-    });
-
-    // Convert to array format
-    const sortedMonths = Object.keys(monthlyData).sort();
-    const contentTypeArray = Array.from(contentTypes);
-
-    const contentTypeData = sortedMonths.map(month => {
-      const monthData: { [key: string]: string | number } = { date: month };
-      contentTypeArray.forEach(contentType => {
-        monthData[contentType] = monthlyData[month]?.[contentType] || 0;
-      });
-      return monthData;
-    });
-
-    const contentTypeUpdatedData = sortedMonths.map(month => {
-      const monthData: { [key: string]: string | number } = { date: month };
-      contentTypeArray.forEach(contentType => {
-        monthData[contentType] = monthlyUpdatedData[month]?.[contentType] || 0;
-      });
-      return monthData;
-    });
-
-    return {
-      contentTypeData: contentTypeData as Array<{ date: string; [key: string]: string | number }>,
-      contentTypeUpdatedData: contentTypeUpdatedData as Array<{ date: string; [key: string]: string | number }>,
-      contentTypes: contentTypeArray
-    };
-  } catch (error) {
-    console.error('Error fetching content type chart data:', error);
-    return {
-      contentTypeData: [],
-      contentTypeUpdatedData: [],
-      contentTypes: []
-    };
+  // Initialize all months with zero counts
+  let currentMonth = new Date(startDate);
+  while (currentMonth <= now) {
+    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-01`;
+    monthlyData[monthKey] = {};
+    currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
-} 
+
+  // Process new content entries
+  (newContentEntries as ContentfulEntry[]).forEach((entry) => {
+    if (entry.sys.firstPublishedAt) {
+      const publishDate = new Date(entry.sys.firstPublishedAt);
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
+      const contentType = entry.sys.contentType?.sys.id || 'unknown';
+
+      if (monthlyData[monthKey]) {
+        if (!monthlyData[monthKey][contentType]) {
+          monthlyData[monthKey][contentType] = 0;
+        }
+        monthlyData[monthKey][contentType]++;
+      }
+    }
+  });
+
+  // Get all content types that have been published
+  const allContentTypes = new Set<string>();
+  Object.values(monthlyData).forEach(monthData => {
+    Object.keys(monthData).forEach(contentType => {
+      allContentTypes.add(contentType);
+    });
+  });
+
+  // Filter content types based on tracked types if provided
+  const contentTypes = trackedContentTypes.length > 0 
+    ? trackedContentTypes.filter(type => allContentTypes.has(type))
+    : Array.from(allContentTypes);
+
+  // Create sorted array of months
+  const sortedMonths = Object.keys(monthlyData).sort();
+
+  // Transform data into the required format
+  const contentTypeData = sortedMonths.map(month => {
+    const monthData: { [key: string]: string | number } = { date: month };
+    contentTypes.forEach(contentType => {
+      monthData[contentType] = monthlyData[month]?.[contentType] || 0;
+    });
+    return monthData;
+  });
+
+  return {
+    contentTypeData: contentTypeData as Array<{ date: string; [key: string]: string | number }>,
+    contentTypes: contentTypes
+  };
+}; 

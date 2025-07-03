@@ -30,13 +30,11 @@ const formatDate = (dateString: string) => {
 
 interface ContentChartProps {
   data?: Array<{ date: string; count: number; percentChange?: number }>
-  updatedData?: Array<{ date: string; count: number; percentChange?: number }>
   selectedTimeRange: 'all' | 'year' | '6months'
-  selectedContentType: 'new' | 'updated'
 }
 
 // Custom tooltip component to show percentage change
-const CustomTooltip = ({ active, payload, label, contentType }: any) => {
+const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     const formattedDate = formatDate(label);
@@ -46,7 +44,7 @@ const CustomTooltip = ({ active, payload, label, contentType }: any) => {
     return (
       <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
         <p className="font-semibold">{formattedDate}</p>
-        <p>{`${count} ${contentType === 'new' ? "new entries" : "entries published or updated"}`}</p>
+        <p>{`${count} new entries`}</p>
         {percentChange !== undefined && (
           <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
             {formatPercentageChange(percentChange)} from previous month
@@ -61,24 +59,15 @@ const CustomTooltip = ({ active, payload, label, contentType }: any) => {
 
 export default function ContentChart({
   data = [],
-  updatedData = [],
   selectedTimeRange,
-  selectedContentType,
 }: ContentChartProps) {
   const [filteredData, setFilteredData] = useState(data);
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
 
   useEffect(() => {
-    // Return early only if both data sources are empty
-    if ((!data || data.length === 0) && (!updatedData || updatedData.length === 0)) {
-      console.log('Both data sources are empty');
-      return;
-    }
-
-    // Return early if the selected data source is empty
-    const sourceData = selectedContentType === 'new' ? data : updatedData;
-    if (!sourceData || sourceData.length === 0) {
-      console.log(`Selected data source (${selectedContentType}) is empty`);
+    // Return early if data is empty
+    if (!data || data.length === 0) {
+      console.log('Data source is empty');
       return;
     }
 
@@ -87,23 +76,23 @@ export default function ContentChart({
     const filterData = () => {
       switch (selectedTimeRange) {
         case 'all':
-          return [...sourceData];
+          return [...data];
         case 'year':
           const oneYearAgo = new Date(
             currentDate.getFullYear() - 1,
             currentDate.getMonth(),
             currentDate.getDate()
           );
-          return sourceData.filter(item => new Date(item.date) >= oneYearAgo);
+          return data.filter(item => new Date(item.date) >= oneYearAgo);
         case '6months':
           const sixMonthsAgo = new Date(
             currentDate.getFullYear(),
             currentDate.getMonth() - 6,
             currentDate.getDate()
           );
-          return sourceData.filter(item => new Date(item.date) >= sixMonthsAgo);
+          return data.filter(item => new Date(item.date) >= sixMonthsAgo);
         default:
-          return [...sourceData];
+          return [...data];
       }
     };
 
@@ -148,7 +137,7 @@ export default function ContentChart({
     } else {
       setYAxisDomain([0, 20]);
     }
-  }, [data, updatedData, selectedTimeRange, selectedContentType]);
+  }, [data, selectedTimeRange]);
 
   return (
     <div className="flex gap-8">
@@ -172,7 +161,7 @@ export default function ContentChart({
               allowDecimals={false}
             />
             <Tooltip 
-              content={<CustomTooltip contentType={selectedContentType} />}
+              content={<CustomTooltip />}
               contentStyle={{
                 borderRadius: "0.5rem",
                 border: "none",
@@ -183,7 +172,7 @@ export default function ContentChart({
             <Line
               type="monotone"
               dataKey="count"
-              name={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
+              name="New Content"
               stroke="#3b82f6"
               strokeWidth={2}
               dot={{ r: 4, strokeWidth: 2 }}
@@ -214,8 +203,8 @@ export default function ContentChart({
             className="h-3 w-3 rounded-full" 
             style={{ backgroundColor: "#3b82f6" }}
           />
-          <span className="text-sm truncate" title={selectedContentType === 'new' ? "New Content" : "New & Updated Content"}>
-            {selectedContentType === 'new' ? "New Content" : "New & Updated Content"}
+          <span className="text-sm truncate" title="New Content">
+            New Content
           </span>
         </div>
       </div>
