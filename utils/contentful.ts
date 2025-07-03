@@ -461,7 +461,8 @@ export async function fetchContentTypeChartData(
     // Process published entries
     publishedEntries.items.forEach((entry: any) => {
       const contentType = entry.sys.contentType.sys.id;
-      if (!trackedContentTypes.length || trackedContentTypes.includes(contentType)) {
+      // Only include content types that are in the tracked list, or all if no specific types are tracked
+      if (trackedContentTypes.length === 0 || trackedContentTypes.includes(contentType)) {
         const date = new Date(entry.sys.firstPublishedAt); // Use firstPublishedAt for new content
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
         
@@ -478,7 +479,8 @@ export async function fetchContentTypeChartData(
     // Process updated entries
     updatedEntries.items.forEach((entry: any) => {
       const contentType = entry.sys.contentType.sys.id;
-      if (!trackedContentTypes.length || trackedContentTypes.includes(contentType)) {
+      // Only include content types that are in the tracked list, or all if no specific types are tracked
+      if (trackedContentTypes.length === 0 || trackedContentTypes.includes(contentType)) {
         const date = new Date(entry.sys.publishedAt); // Use publishedAt for updated content
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
         

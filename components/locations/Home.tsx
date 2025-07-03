@@ -159,6 +159,7 @@ const Home = () => {
   const [defaultTimeRange, setDefaultTimeRange] = useState<'all' | 'year' | '6months'>('year');
   const [hasLoadedData, setHasLoadedData] = useState<boolean>(false);
   const [forceRefresh, setForceRefresh] = useState<boolean>(false);
+  const [configLoaded, setConfigLoaded] = useState<boolean>(false);
 
   // Add loading timer state
   const [loadingTime, setLoadingTime] = useState<number>(0);
@@ -178,6 +179,7 @@ const Home = () => {
           setShowUpcomingReleases(parsedConfig.showUpcomingReleases ?? true);
           setTimeToPublishDays(parsedConfig.timeToPublishDays || 30);
           setDefaultTimeRange(parsedConfig.defaultTimeRange || 'year');
+          setConfigLoaded(true);
           return;
         }
 
@@ -188,6 +190,7 @@ const Home = () => {
         setShowUpcomingReleases(true);
         setTimeToPublishDays(30);
         setDefaultTimeRange('year');
+        setConfigLoaded(true);
       } catch (error) {
         console.error('Error loading app parameters:', error);
         // Use defaults if loading fails
@@ -197,6 +200,7 @@ const Home = () => {
         setShowUpcomingReleases(true);
         setTimeToPublishDays(30);
         setDefaultTimeRange('year');
+        setConfigLoaded(true);
       }
     };
 
@@ -374,6 +378,11 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
+    // Don't run if config hasn't been loaded yet
+    if (!configLoaded) {
+      return;
+    }
+    
     const fetchContentStats = async () => {
       try {
         setIsLoading(true);
@@ -802,7 +811,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData, configLoaded]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
