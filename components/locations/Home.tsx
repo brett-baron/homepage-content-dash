@@ -50,7 +50,6 @@ interface DashboardData {
     averageTimeToPublish: number;
   };
   chartData: Array<{ date: string; count: number }>;
-  updatedChartData: Array<{ date: string; count: number }>;
   scheduledReleases: ScheduledRelease[];
   userCache: UserCache;
   scheduledContent: EntryProps[];
@@ -58,12 +57,10 @@ interface DashboardData {
   needsUpdateContent: EntryProps[];
   contentTypeChartData: {
     contentTypeData: Array<{ date: string; [key: string]: string | number }>;
-    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
     contentTypes: string[];
   };
   authorChartData: {
     authorData: Array<{ date: string; [key: string]: string | number }>;
-    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
     authors: string[];
   };
 }
@@ -141,7 +138,6 @@ const Home = () => {
     averageTimeToPublish: 0,
   });
   const [chartData, setChartData] = useState<Array<{ date: string; count: number }>>([]);
-  const [updatedChartData, setUpdatedChartData] = useState<Array<{ date: string; count: number }>>([]);
   const [scheduledReleases, setScheduledReleases] = useState<ScheduledRelease[]>([]);
   const [userCache, setUserCache] = useState<UserCache>({});
   
@@ -358,16 +354,14 @@ const Home = () => {
 
   const [contentTypeChartData, setContentTypeChartData] = useState<{
     contentTypeData: Array<{ date: string; [key: string]: string | number }>;
-    contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
     contentTypes: string[];
-  }>({ contentTypeData: [], contentTypeUpdatedData: [], contentTypes: [] });
+  }>({ contentTypeData: [], contentTypes: [] });
 
   // Add new state for author data
   const [authorChartData, setAuthorChartData] = useState<{
     authorData: Array<{ date: string; [key: string]: string | number }>;
-    authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
     authors: string[];
-  }>({ authorData: [], authorUpdatedData: [], authors: [] });
+  }>({ authorData: [], authors: [] });
 
   // Check for cached data on component mount
   useEffect(() => {
@@ -395,7 +389,6 @@ const Home = () => {
             // Load data from cache
             setStats(cachedData.stats);
             setChartData(cachedData.chartData);
-            setUpdatedChartData(cachedData.updatedChartData);
             setScheduledReleases(cachedData.scheduledReleases);
             setUserCache(cachedData.userCache);
             setScheduledContent(cachedData.scheduledContent);
@@ -609,7 +602,6 @@ const Home = () => {
         // Update all states at once
         setStats(updatedStats);
         setChartData(chartDataFromApi.newContent);
-        setUpdatedChartData(chartDataFromApi.updatedContent);
         setScheduledReleases(releasesData);
         setScheduledContent(scheduled);
         setRecentlyPublishedContent(recentlyPublishedResponse.items);
@@ -618,7 +610,6 @@ const Home = () => {
         // Update content type chart data
         setContentTypeChartData({
           contentTypeData: contentTypeDataFromApi.contentTypeData,
-          contentTypeUpdatedData: contentTypeDataFromApi.contentTypeUpdatedData,
           contentTypes: contentTypeDataFromApi.contentTypes
         });
         
@@ -629,37 +620,6 @@ const Home = () => {
         startDate.setMonth(currentDate.getMonth() - 12); // Get last 12 months like the main chart
         startDate.setDate(1);
         startDate.setHours(0, 0, 0, 0);
-
-        // Fetch all published entries for author analysis (same as main chart)
-        const fetchAllPublishedForAuthors = async () => {
-          const allEntries = [];
-          let skip = 0;
-          const limit = 1000;
-          
-          while (true) {
-            const response = await cma.entry.getMany({
-              spaceId: sdk.ids.space,
-              environmentId: sdk.ids.environment,
-              query: {
-                'sys.publishedAt[gte]': startDate.toISOString(),
-                'sys.publishedAt[exists]': true,
-                skip,
-                limit,
-                order: 'sys.publishedAt'
-              }
-            });
-            
-            allEntries.push(...response.items);
-            
-            if (response.items.length < limit) {
-              break;
-            }
-            
-            skip += limit;
-          }
-          
-          return allEntries;
-        };
 
         // Fetch all new content for author analysis (same as main chart)
         const fetchAllNewContentForAuthors = async () => {
@@ -692,26 +652,17 @@ const Home = () => {
           return allEntries;
         };
 
-        // Fetch the comprehensive datasets
-        const [allNewContentEntries, allPublishedEntries] = await Promise.all([
-          fetchAllNewContentForAuthors(),
-          fetchAllPublishedForAuthors()
-        ]);
+        // Fetch the comprehensive dataset
+        const allNewContentEntries = await fetchAllNewContentForAuthors();
 
         const authorData = new Map<string, Map<string, number>>();
-        const authorUpdatedData = new Map<string, Map<string, number>>();
         const authors = new Set<string>();
 
         // Helper function to process entries by date and author
-        const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>, useUpdateDate = false) => {
+        const processEntriesByAuthor = async (entries: any[], dataMap: Map<string, Map<string, number>>) => {
           for (const entry of entries) {
             // For new content: use firstPublishedAt
-            // For updated content: use publishedAt
-            const date = new Date(
-              useUpdateDate 
-                ? entry.sys.publishedAt
-                : (entry.sys.firstPublishedAt || entry.sys.publishedAt)
-            );
+            const date = new Date(entry.sys.firstPublishedAt || entry.sys.publishedAt);
             
             const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             
@@ -739,9 +690,8 @@ const Home = () => {
           }
         };
 
-        // Process the comprehensive datasets
-        await processEntriesByAuthor(allNewContentEntries, authorData, false);
-        await processEntriesByAuthor(allPublishedEntries, authorUpdatedData, true);
+        // Process the comprehensive dataset
+        await processEntriesByAuthor(allNewContentEntries, authorData);
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
@@ -775,7 +725,6 @@ const Home = () => {
 
         const finalAuthorChartData = {
           authorData: convertMapToChartData(authorData),
-          authorUpdatedData: convertMapToChartData(authorUpdatedData),
           authors: Array.from(authors)
         };
 
@@ -785,7 +734,6 @@ const Home = () => {
         const dashboardData: DashboardData = {
           stats: updatedStats,
           chartData: chartDataFromApi.newContent,
-          updatedChartData: chartDataFromApi.updatedContent,
           scheduledReleases: releasesData,
           userCache,
           scheduledContent: scheduled,
@@ -793,7 +741,6 @@ const Home = () => {
           needsUpdateContent: needsUpdateResponse.items,
           contentTypeChartData: {
             contentTypeData: contentTypeDataFromApi.contentTypeData,
-            contentTypeUpdatedData: contentTypeDataFromApi.contentTypeUpdatedData,
             contentTypes: contentTypeDataFromApi.contentTypes
           },
           authorChartData: finalAuthorChartData
@@ -965,12 +912,9 @@ const Home = () => {
               <h2 className="text-xl font-semibold">Content Publishing Trends</h2>
               <ContentTrendsTabs
                 chartData={chartData}
-                updatedChartData={updatedChartData}
                 contentTypeData={contentTypeChartData.contentTypeData}
-                contentTypeUpdatedData={contentTypeChartData.contentTypeUpdatedData}
                 contentTypes={contentTypeChartData.contentTypes}
                 authorData={authorChartData.authorData}
-                authorUpdatedData={authorChartData.authorUpdatedData}
                 authors={authorChartData.authors}
                 defaultTimeRange={defaultTimeRange}
               />

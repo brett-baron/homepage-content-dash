@@ -13,33 +13,25 @@ import ContentChart from "./content-chart"
 import ContentTypeChart from "./content-type-chart"
 
 type TimeRange = 'all' | 'year' | '6months';
-type ContentType = 'new' | 'updated';
 
 interface ContentTrendsTabsProps {
   chartData: Array<{ date: string; count: number; percentChange?: number }>;
-  updatedChartData: Array<{ date: string; count: number; percentChange?: number }>;
   contentTypeData: Array<{ date: string; [key: string]: string | number }>;
-  contentTypeUpdatedData: Array<{ date: string; [key: string]: string | number }>;
   contentTypes: string[];
   authorData: Array<{ date: string; [key: string]: string | number }>;
-  authorUpdatedData: Array<{ date: string; [key: string]: string | number }>;
   authors: string[];
   defaultTimeRange?: TimeRange;
 }
 
 export default function ContentTrendsTabs({
   chartData,
-  updatedChartData,
   contentTypeData,
-  contentTypeUpdatedData,
   contentTypes,
   authorData,
-  authorUpdatedData,
   authors,
   defaultTimeRange = 'year'
 }: ContentTrendsTabsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>(defaultTimeRange);
-  const [contentView, setContentView] = useState<ContentType>('new');
 
   return (
     <div className="w-full rounded-xl bg-white p-6 shadow-sm">
@@ -51,21 +43,7 @@ export default function ContentTrendsTabs({
             <TabsTrigger value="by-author">By Creator</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-4">
-            {/* Content type selector - shown for both tabs */}
-            <Select value={contentView} onValueChange={(value) => setContentView(value as ContentType)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Content type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>View</SelectLabel>
-                  <SelectItem value="new">New Content</SelectItem>
-                  <SelectItem value="updated">New or Updated</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            
-            {/* Time range selector - shown for both tabs */}
+            {/* Time range selector */}
             <Select value={timeRange} onValueChange={(value) => setTimeRange(value as TimeRange)}>
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Select time range" />
@@ -85,19 +63,15 @@ export default function ContentTrendsTabs({
         <TabsContent value="overall" className="mt-0">
           <ContentChart
             data={chartData}
-            updatedData={updatedChartData}
             selectedTimeRange={timeRange}
-            selectedContentType={contentView}
           />
         </TabsContent>
 
         <TabsContent value="by-type" className="mt-0">
           <ContentTypeChart
             data={contentTypeData}
-            updatedData={contentTypeUpdatedData}
             contentTypes={contentTypes}
             selectedTimeRange={timeRange}
-            selectedContentType={contentView}
             title="Content Types"
           />
         </TabsContent>
@@ -105,10 +79,8 @@ export default function ContentTrendsTabs({
         <TabsContent value="by-author" className="mt-0">
           <ContentTypeChart
             data={authorData}
-            updatedData={authorUpdatedData}
             contentTypes={authors}
             selectedTimeRange={timeRange}
-            selectedContentType={contentView}
             title="Creators"
           />
         </TabsContent>
