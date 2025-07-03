@@ -246,7 +246,7 @@ const ConfigScreen = () => {
         ) : (
           <>
             <FormControl marginBottom="spacingL">
-              <FormControl.Label>Content "Needs Update" Time Threshold</FormControl.Label>
+              <FormControl.Label>Content &quot;Needs Update&quot; Time Threshold</FormControl.Label>
               <Select
                 id="needs-update-months"
                 name="needs-update-months"
@@ -263,7 +263,7 @@ const ConfigScreen = () => {
                 <Select.Option value="24">24 months</Select.Option>
               </Select>
               <FormControl.HelpText>
-                Content will be marked as "Needs Update" when it hasn't been updated for this amount of time.
+                Content will be marked as &quot;Needs Update&quot; when it hasn&apos;t been updated for this amount of time.
               </FormControl.HelpText>
             </FormControl>
 
@@ -285,7 +285,7 @@ const ConfigScreen = () => {
             </FormControl>
 
             <FormControl marginBottom="spacingL">
-              <FormControl.Label>"Recently Published" Time Period</FormControl.Label>
+              <FormControl.Label>&quot;Recently Published&quot; Time Period</FormControl.Label>
               <Select
                 id="recently-published-days"
                 name="recently-published-days"
@@ -299,7 +299,7 @@ const ConfigScreen = () => {
                 <Select.Option value="30">30 days</Select.Option>
               </Select>
               <FormControl.HelpText>
-                Content will be considered "Recently Published" if it was published within this time period.
+                Content will be considered &quot;Recently Published&quot; if it was published within this time period.
               </FormControl.HelpText>
             </FormControl>
 
