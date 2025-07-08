@@ -290,7 +290,7 @@ export const fetchChartData = async (
     // Use the specified number of months
     startDate = new Date(now);
     startDate.setMonth(now.getMonth() - monthsToShow);
-    startDate.setDate(1);
+  startDate.setDate(1);
   }
   
   startDate.setHours(0, 0, 0, 0);  // Set to beginning of the day
@@ -421,7 +421,7 @@ export const fetchContentTypeChartData = async (
   contentTypes: string[];
 }> => {
   const { trackedContentTypes = [], monthsToShow = 12 } = options;
-  
+
   const now = new Date();
   
   let startDate: Date;
@@ -460,7 +460,7 @@ export const fetchContentTypeChartData = async (
     // Use the specified number of months
     startDate = new Date(now);
     startDate.setMonth(now.getMonth() - monthsToShow);
-    startDate.setDate(1);
+  startDate.setDate(1);
   }
   
   startDate.setHours(0, 0, 0, 0);

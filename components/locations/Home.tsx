@@ -718,24 +718,44 @@ const Home = () => {
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
-          // Get all dates from the data itself
+          // Find the earliest and latest dates from the data
+          const allDataDates = Array.from(dataMap.keys()).sort();
+          if (allDataDates.length === 0) {
+            return [];
+          }
+
+          // Parse the earliest date more carefully
+          const [earliestYear, earliestMonth] = allDataDates[0].split('-').map(Number);
+          const currentDate = new Date();
           const dates = new Set<string>();
+
+          // Generate all months from earliest to current
+          let year = earliestYear;
+          let month = earliestMonth;
           
-          // Add all existing dates from the data
-          dataMap.forEach((_, date) => dates.add(date));
+          while (year < currentDate.getFullYear() || (year === currentDate.getFullYear() && month <= currentDate.getMonth() + 1)) {
+            const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+            dates.add(monthKey);
+            
+            month++;
+            if (month > 12) {
+              month = 1;
+              year++;
+            }
+          }
+
+          const finalDates = Array.from(dates).sort();
 
           // Convert to array and sort
-          return Array.from(dates)
-            .sort()
-            .map(date => ({
-              date: `${date}-01`, // Convert to full date format
-              ...Object.fromEntries(
-                Array.from(authors).map(author => [
-                  author,
-                  (dataMap.get(date)?.get(author) || 0)
-                ])
-              )
-            }));
+          return finalDates.map(date => ({
+            date: `${date}-01`, // Convert to full date format
+            ...Object.fromEntries(
+              Array.from(authors).map(author => [
+                author,
+                (dataMap.get(date)?.get(author) || 0)
+              ])
+            )
+          }));
         };
 
         const finalAuthorChartData = {
