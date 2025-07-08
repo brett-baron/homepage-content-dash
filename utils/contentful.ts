@@ -251,14 +251,48 @@ export const fetchChartData = async (
 ): Promise<{
   newContent: Array<{ date: string; count: number; percentChange?: number }>;
 }> => {
-  // Use 1200 months (100 years) for "All Time" view
-  const effectiveMonthsToShow = options.monthsToShow === null ? 1200 : (options.monthsToShow ?? 12);
-
+  const { monthsToShow = 12 } = options;
   const now = new Date();
-  const startDate = new Date(now);
-  // Remove the +1 to include the full range of months
-  startDate.setMonth(now.getMonth() - effectiveMonthsToShow);
-  startDate.setDate(1);
+  
+  let startDate: Date;
+  
+  if (monthsToShow === null) {
+    // For "All Time", find the earliest entry
+    try {
+      const earliestEntry = await cma.entry.getMany({
+        spaceId,
+        environmentId,
+        query: {
+          'sys.firstPublishedAt[exists]': true,
+          'sys.publishedAt[exists]': true,
+          limit: 1,
+          order: 'sys.firstPublishedAt'
+        }
+      });
+      
+      if (earliestEntry.items.length > 0) {
+        const earliestDate = new Date(earliestEntry.items[0].sys.firstPublishedAt);
+        startDate = new Date(earliestDate.getFullYear(), earliestDate.getMonth(), 1);
+      } else {
+        // Fallback to 12 months ago if no entries found
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 12);
+        startDate.setDate(1);
+      }
+    } catch (error) {
+      console.error('Error finding earliest entry:', error);
+      // Fallback to 12 months ago
+      startDate = new Date(now);
+      startDate.setMonth(now.getMonth() - 12);
+      startDate.setDate(1);
+    }
+  } else {
+    // Use the specified number of months
+    startDate = new Date(now);
+    startDate.setMonth(now.getMonth() - monthsToShow);
+    startDate.setDate(1);
+  }
+  
   startDate.setHours(0, 0, 0, 0);  // Set to beginning of the day
 
   // Create fetch function for pagination
@@ -388,13 +422,47 @@ export const fetchContentTypeChartData = async (
 }> => {
   const { trackedContentTypes = [], monthsToShow = 12 } = options;
   
-  // Use 1200 months (100 years) for "All Time" view
-  const effectiveMonthsToShow = monthsToShow === null ? 1200 : monthsToShow;
-
   const now = new Date();
-  const startDate = new Date(now);
-  startDate.setMonth(now.getMonth() - effectiveMonthsToShow);
-  startDate.setDate(1);
+  
+  let startDate: Date;
+  
+  if (monthsToShow === null) {
+    // For "All Time", find the earliest entry
+    try {
+      const earliestEntry = await cma.entry.getMany({
+        spaceId,
+        environmentId,
+        query: {
+          'sys.firstPublishedAt[exists]': true,
+          'sys.publishedAt[exists]': true,
+          limit: 1,
+          order: 'sys.firstPublishedAt'
+        }
+      });
+      
+      if (earliestEntry.items.length > 0) {
+        const earliestDate = new Date(earliestEntry.items[0].sys.firstPublishedAt);
+        startDate = new Date(earliestDate.getFullYear(), earliestDate.getMonth(), 1);
+      } else {
+        // Fallback to 12 months ago if no entries found
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 12);
+        startDate.setDate(1);
+      }
+    } catch (error) {
+      console.error('Error finding earliest entry:', error);
+      // Fallback to 12 months ago
+      startDate = new Date(now);
+      startDate.setMonth(now.getMonth() - 12);
+      startDate.setDate(1);
+    }
+  } else {
+    // Use the specified number of months
+    startDate = new Date(now);
+    startDate.setMonth(now.getMonth() - monthsToShow);
+    startDate.setDate(1);
+  }
+  
   startDate.setHours(0, 0, 0, 0);
 
   // Only fetch new content

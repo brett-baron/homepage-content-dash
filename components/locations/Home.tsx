@@ -30,7 +30,7 @@ interface ContentType {
   };
 }
 
-const CACHE_DURATION = 20 * 60 * 1000; // 20 minutes in milliseconds
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
 const DASHBOARD_CACHE_KEY = 'contentDashboard_cachedData';
 const DASHBOARD_CACHE_TIMESTAMP_KEY = 'contentDashboard_cacheTimestamp';
 
@@ -371,6 +371,25 @@ const Home = () => {
     }
   }, []);
 
+  // Add periodic cache validation to prevent blank dashboard
+  useEffect(() => {
+    const checkCacheValidity = () => {
+      if (hasLoadedData && !forceRefresh) {
+        const { isValid } = loadDashboardDataFromCache();
+        if (!isValid) {
+          console.log('Cache expired, forcing refresh...');
+          setHasLoadedData(false);
+          setForceRefresh(true);
+        }
+      }
+    };
+
+    // Check cache validity every 10 minutes
+    const interval = setInterval(checkCacheValidity, 10 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [hasLoadedData, forceRefresh]);
+
   useEffect(() => {
     // Don't run if config hasn't been loaded yet
     if (!configLoaded) {
@@ -398,6 +417,10 @@ const Home = () => {
             setAuthorChartData(cachedData.authorChartData);
             setIsLoading(false);
             return;
+          } else {
+            // Cache is invalid, reset hasLoadedData to force fresh fetch
+            console.log('Cache is invalid, forcing fresh data fetch...');
+            setHasLoadedData(false);
           }
         }
         
@@ -430,7 +453,7 @@ const Home = () => {
             cma,
             sdk.ids.space,
             sdk.ids.environment,
-            { monthsToShow: 12 }
+            { monthsToShow: null } // Fetch all historical data
           ),
           fetchContentTypeChartData(
             cma,
@@ -438,7 +461,7 @@ const Home = () => {
             sdk.ids.environment,
             { 
               trackedContentTypes,
-              monthsToShow: 12
+              monthsToShow: null // Fetch all historical data
             }
           ),
           // Recently published content
@@ -617,7 +640,7 @@ const Home = () => {
         // This ensures author chart matches the total published content numbers
         const currentDate = new Date();
         const startDate = new Date(currentDate);
-        startDate.setMonth(currentDate.getMonth() - 12); // Get last 12 months like the main chart
+        startDate.setMonth(currentDate.getMonth() - 1200); // Get all historical data (100 years back)
         startDate.setDate(1);
         startDate.setHours(0, 0, 0, 0);
 
@@ -695,25 +718,17 @@ const Home = () => {
 
         // Convert the Maps to the required format
         const convertMapToChartData = (dataMap: Map<string, Map<string, number>>) => {
-          // Get all dates in range
-          const now = new Date();
+          // Get all dates from the data itself
           const dates = new Set<string>();
           
-          // Add all months in the last year
-          for (let i = 0; i < 12; i++) {
-            const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            dates.add(monthYear);
-          }
-
-          // Add any existing dates from the data
+          // Add all existing dates from the data
           dataMap.forEach((_, date) => dates.add(date));
 
           // Convert to array and sort
           return Array.from(dates)
             .sort()
             .map(date => ({
-              date,
+              date: `${date}-01`, // Convert to full date format
               ...Object.fromEntries(
                 Array.from(authors).map(author => [
                   author,
@@ -754,6 +769,22 @@ const Home = () => {
         console.error('Error fetching content stats:', error);
         setError('Failed to load content data');
         setIsLoading(false);
+        
+        // Try to load from cache as fallback, even if expired
+        const { data: cachedData } = loadDashboardDataFromCache();
+        if (cachedData) {
+          console.log('Using expired cache data as fallback...');
+          setStats(cachedData.stats);
+          setChartData(cachedData.chartData);
+          setScheduledReleases(cachedData.scheduledReleases);
+          setUserCache(cachedData.userCache);
+          setScheduledContent(cachedData.scheduledContent);
+          setRecentlyPublishedContent(cachedData.recentlyPublishedContent);
+          setNeedsUpdateContent(cachedData.needsUpdateContent);
+          setContentTypeChartData(cachedData.contentTypeChartData);
+          setAuthorChartData(cachedData.authorChartData);
+          setError('Using cached data - click refresh to update');
+        }
       }
     };
 
@@ -808,7 +839,14 @@ const Home = () => {
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex justify-between items-center">
-          <h1 className="text-4xl font-bold">Content Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold">Content Dashboard</h1>
+            {error && error.includes('cached data') && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+                Using cached data
+              </span>
+            )}
+          </div>
           <button 
             onClick={() => {
               clearDashboardCache();
@@ -832,7 +870,24 @@ const Home = () => {
         ) : error ? (
           <div className="bg-destructive/10 p-4 rounded-md">
             <p className="text-destructive">{error}</p>
-            <p className="text-sm mt-2">There was an error loading the content data. Please try refreshing the page.</p>
+            <p className="text-sm mt-2">
+              {error.includes('cached data') 
+                ? 'The dashboard is showing cached data. Click refresh to load the latest information.'
+                : 'There was an error loading the content data. Please try refreshing the page.'
+              }
+            </p>
+            {error.includes('cached data') && (
+              <button 
+                onClick={() => {
+                  clearDashboardCache();
+                  setForceRefresh(true);
+                  setError(null);
+                }}
+                className="mt-3 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Refresh Now
+              </button>
+            )}
           </div>
         ) : (
           <>

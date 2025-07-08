@@ -97,19 +97,27 @@ export default function ContentTypeChart({
         case 'all':
           return [...data];
         case 'year':
+          // Get the start of the month 12 months ago
           const oneYearAgo = new Date(
             currentDate.getFullYear() - 1,
             currentDate.getMonth(),
-            currentDate.getDate()
+            1 // First day of the month
           );
-          return data.filter(item => new Date(item.date) >= oneYearAgo);
+          return data.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate >= oneYearAgo;
+          });
         case '6months':
+          // Get the start of the month 6 months ago
           const sixMonthsAgo = new Date(
             currentDate.getFullYear(),
             currentDate.getMonth() - 6,
-            currentDate.getDate()
+            1 // First day of the month
           );
-          return data.filter(item => new Date(item.date) >= sixMonthsAgo);
+          return data.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate >= sixMonthsAgo;
+          });
         default:
           return [...data];
       }
