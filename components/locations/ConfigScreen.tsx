@@ -35,7 +35,6 @@ const ConfigScreen = () => {
     
     // Store the configuration in localStorage for the Home component to access
     localStorage.setItem('contentDashboardConfig', JSON.stringify(parameters));
-    console.log('Saved configuration to localStorage:', parameters);
     
     // Get current the state of EditorInterface and other entities
     // related to this app installation
@@ -74,7 +73,6 @@ const ConfigScreen = () => {
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
         
-        console.log('Available content types:', sortedContentTypes.map(ct => ct.id));
         setContentTypes(sortedContentTypes);
         setFilteredContentTypes(sortedContentTypes);
         
@@ -84,7 +82,6 @@ const ConfigScreen = () => {
           try {
             const parsedConfig = JSON.parse(storedConfig) as AppInstallationParameters;
             if (parsedConfig) {
-              console.log('Config from localStorage:', parsedConfig);
               
               // Filter out content types that don't exist
               if (parsedConfig.trackedContentTypes) {
@@ -93,9 +90,6 @@ const ConfigScreen = () => {
                 );
                 
                 if (validTrackedTypes.length !== parsedConfig.trackedContentTypes.length) {
-                  console.warn('Some tracked content types were filtered out because they do not exist:', 
-                    parsedConfig.trackedContentTypes.filter(id => !sortedContentTypes.some(ct => ct.id === id))
-                  );
                   parsedConfig.trackedContentTypes = validTrackedTypes;
                 }
               }
@@ -108,13 +102,12 @@ const ConfigScreen = () => {
               parsedConfig.timeToPublishDays = parsedConfig.timeToPublishDays || 30;
               
               setParameters(parsedConfig);
-              console.log('Loaded and filtered configuration from localStorage:', parsedConfig);
               setIsLoading(false);
               sdk.app.setReady();
               return;
             }
           } catch (e) {
-            console.error('Error parsing stored config:', e);
+            // Error parsing stored config - will fall back to SDK parameters
           }
         }
         
@@ -142,7 +135,7 @@ const ConfigScreen = () => {
           });
         }
       } catch (error) {
-        console.error('Error loading content types:', error);
+        // Error loading content types
       } finally {
         setIsLoading(false);
         sdk.app.setReady();
@@ -164,7 +157,6 @@ const ConfigScreen = () => {
 
   const handleTrackedContentTypeSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { checked, value } = event.target;
-    console.log(`Tracked content type selection changed: ${value} - ${checked ? 'checked' : 'unchecked'}`);
 
     setParameters(prev => {
       const trackedContentTypes = prev.trackedContentTypes || [];
@@ -187,7 +179,6 @@ const ConfigScreen = () => {
 
   const handleNeedsUpdateMonthsChange = (value: string) => {
     const months = parseInt(value, 10);
-    console.log(`Needs update months changed to: ${months}`);
     
     setParameters(prev => ({
       ...prev,
@@ -196,8 +187,6 @@ const ConfigScreen = () => {
   };
 
   const handleDefaultTimeRangeChange = (value: string) => {
-    console.log(`Default time range changed to: ${value}`);
-    
     setParameters(prev => ({
       ...prev,
       defaultTimeRange: value as 'all' | 'year' | '6months'
@@ -206,7 +195,6 @@ const ConfigScreen = () => {
 
   const handleRecentlyPublishedDaysChange = (value: string) => {
     const days = parseInt(value, 10);
-    console.log(`Recently published days changed to: ${days}`);
     
     setParameters(prev => ({
       ...prev,
@@ -216,7 +204,6 @@ const ConfigScreen = () => {
 
   const handleShowUpcomingReleasesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
-    console.log(`Show upcoming releases changed to: ${checked}`);
     
     setParameters(prev => ({
       ...prev,
@@ -226,7 +213,6 @@ const ConfigScreen = () => {
 
   const handleTimeToPublishDaysChange = (value: string) => {
     const days = parseInt(value, 10);
-    console.log(`Time to publish days changed to: ${days}`);
     
     setParameters(prev => ({
       ...prev,
