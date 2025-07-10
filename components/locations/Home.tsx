@@ -100,6 +100,17 @@ const loadDashboardDataFromCache = (): { data: DashboardData | null; isValid: bo
     }
     
     const data = JSON.parse(cachedData) as DashboardData;
+    
+    // Validate cached data structure to prevent component loading errors
+    if (!data || typeof data !== 'object' || 
+        !data.stats || !Array.isArray(data.chartData) || 
+        !Array.isArray(data.scheduledReleases) || 
+        !data.userCache || typeof data.userCache !== 'object') {
+      console.warn('Invalid cached data structure detected, clearing cache');
+      clearDashboardCache();
+      return { data: null, isValid: false };
+    }
+    
     return { data, isValid: true };
   } catch (error) {
     console.warn('Failed to load dashboard data from cache:', error);
@@ -406,6 +417,33 @@ const Home = () => {
     }
   }, []);
 
+  // Add effect to detect when user returns to the dashboard (visibility change)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && hasLoadedData) {
+        // User returned to the dashboard - check if cache is still valid
+        // If cache is older than 5 minutes, force refresh to get latest data
+        const shortCacheDuration = 5 * 60 * 1000; // 5 minutes
+        const cacheTimestamp = localStorage.getItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+        
+        if (cacheTimestamp) {
+          const timestamp = parseInt(cacheTimestamp, 10);
+          const cacheAge = Date.now() - timestamp;
+          
+          if (cacheAge > shortCacheDuration) {
+            console.log('Cache is older than 5 minutes, forcing refresh on return to dashboard');
+            clearDashboardCache();
+            setForceRefresh(true);
+            setHasLoadedData(false);
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [hasLoadedData]);
+
   // Removed periodic cache validation to prevent excessive API calls that cause 429 errors
   // The cache will still be validated when the component mounts or when user manually refreshes
 
@@ -424,18 +462,32 @@ const Home = () => {
         if (!forceRefresh && hasLoadedData) {
           const { data: cachedData, isValid } = loadDashboardDataFromCache();
           if (isValid && cachedData) {
-            // Load data from cache
-            setStats(cachedData.stats);
-            setChartData(cachedData.chartData);
-            setScheduledReleases(cachedData.scheduledReleases);
-            setUserCache(cachedData.userCache);
-            setScheduledContent(cachedData.scheduledContent);
-            setRecentlyPublishedContent(cachedData.recentlyPublishedContent);
-            setNeedsUpdateContent(cachedData.needsUpdateContent);
-            setContentTypeChartData(cachedData.contentTypeChartData);
-            setAuthorChartData(cachedData.authorChartData);
-            setIsLoading(false);
-            return;
+            try {
+              // Load data from cache with validation
+              setStats(cachedData.stats || {
+                totalPublished: 0,
+                percentChange: 0,
+                scheduledCount: 0,
+                recentlyPublishedCount: 0,
+                needsUpdateCount: 0,
+                previousMonthPublished: 0,
+                averageTimeToPublish: 0,
+              });
+              setChartData(cachedData.chartData || []);
+              setScheduledReleases(cachedData.scheduledReleases || []);
+              setUserCache(cachedData.userCache || {});
+              setScheduledContent(cachedData.scheduledContent || []);
+              setRecentlyPublishedContent(cachedData.recentlyPublishedContent || []);
+              setNeedsUpdateContent(cachedData.needsUpdateContent || []);
+              setContentTypeChartData(cachedData.contentTypeChartData || { contentTypeData: [], contentTypes: [] });
+              setAuthorChartData(cachedData.authorChartData || { authorData: [], authors: [] });
+              setIsLoading(false);
+              return;
+            } catch (cacheError) {
+              console.warn('Error loading cached data, forcing fresh fetch:', cacheError);
+              clearDashboardCache();
+              setHasLoadedData(false);
+            }
           } else {
             // Cache is invalid, reset hasLoadedData to force fresh fetch
             console.log('Cache is invalid, forcing fresh data fetch...');
@@ -812,17 +864,31 @@ const Home = () => {
         // Try to load from cache as fallback, even if expired
         const { data: cachedData } = loadDashboardDataFromCache();
         if (cachedData) {
-          console.log('Using expired cache data as fallback...');
-          setStats(cachedData.stats);
-          setChartData(cachedData.chartData);
-          setScheduledReleases(cachedData.scheduledReleases);
-          setUserCache(cachedData.userCache);
-          setScheduledContent(cachedData.scheduledContent);
-          setRecentlyPublishedContent(cachedData.recentlyPublishedContent);
-          setNeedsUpdateContent(cachedData.needsUpdateContent);
-          setContentTypeChartData(cachedData.contentTypeChartData);
-          setAuthorChartData(cachedData.authorChartData);
-          setError('Using cached data - click refresh to update');
+          try {
+            console.log('Using expired cache data as fallback...');
+            setStats(cachedData.stats || {
+              totalPublished: 0,
+              percentChange: 0,
+              scheduledCount: 0,
+              recentlyPublishedCount: 0,
+              needsUpdateCount: 0,
+              previousMonthPublished: 0,
+              averageTimeToPublish: 0,
+            });
+            setChartData(cachedData.chartData || []);
+            setScheduledReleases(cachedData.scheduledReleases || []);
+            setUserCache(cachedData.userCache || {});
+            setScheduledContent(cachedData.scheduledContent || []);
+            setRecentlyPublishedContent(cachedData.recentlyPublishedContent || []);
+            setNeedsUpdateContent(cachedData.needsUpdateContent || []);
+            setContentTypeChartData(cachedData.contentTypeChartData || { contentTypeData: [], contentTypes: [] });
+            setAuthorChartData(cachedData.authorChartData || { authorData: [], authors: [] });
+            setError('Using cached data - click refresh to update');
+          } catch (fallbackError) {
+            console.warn('Error loading fallback cache data:', fallbackError);
+            clearDashboardCache();
+            setError('Failed to load content data and cache is corrupted. Please refresh the page.');
+          }
         }
       }
     };
