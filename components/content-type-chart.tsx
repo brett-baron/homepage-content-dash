@@ -83,6 +83,17 @@ export default function ContentTypeChart({
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
   const [activeContentTypes, setActiveContentTypes] = useState<string[]>([]);
   const [processedData, setProcessedData] = useState<Array<{ date: string; [key: string]: any; highestType?: string }>>([]);
+  const [selectedLine, setSelectedLine] = useState<string | null>(null);
+
+  // Handle line selection
+  const handleLineClick = (lineName: string) => {
+    setSelectedLine(selectedLine === lineName ? null : lineName);
+  };
+
+  // Handle legend click
+  const handleLegendClick = (lineName: string) => {
+    setSelectedLine(selectedLine === lineName ? null : lineName);
+  };
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -137,7 +148,7 @@ export default function ContentTypeChart({
       const highest = values.reduce((max, curr) => curr.value > max.value ? curr : max, { type: '', value: -1 });
       return {
         ...item,
-        highestType: highest.type,
+        highestType: selectedLine || highest.type,
         highestValue: highest.value
       };
     });
@@ -171,7 +182,7 @@ export default function ContentTypeChart({
     } else {
       setYAxisDomain([0, 20]);
     }
-  }, [data, selectedTimeRange, contentTypes]);
+  }, [data, selectedTimeRange, contentTypes, selectedLine]);
 
   return (
     <>
@@ -206,6 +217,11 @@ export default function ContentTypeChart({
                   strokeWidth={2}
                   dot={{ r: 4, strokeWidth: 2 }}
                   activeDot={{ r: 6, strokeWidth: 2 }}
+                  onClick={() => handleLineClick(contentType)}
+                  style={{ 
+                    cursor: 'pointer',
+                    opacity: selectedLine && selectedLine !== contentType ? 0.3 : 1
+                  }}
                 >
                   <LabelList
                     dataKey={contentType}
@@ -214,7 +230,16 @@ export default function ContentTypeChart({
                     content={(props: LabelProps) => {
                       const { x, y, value, index } = props;
                       
-                      if (typeof index !== 'number' || !processedData[index] || processedData[index].highestType !== contentType) {
+                      // Show labels only for selected line or highest value when no selection
+                      if (typeof index !== 'number' || !processedData[index]) {
+                        return null;
+                      }
+
+                      const shouldShowLabel = selectedLine 
+                        ? selectedLine === contentType 
+                        : processedData[index].highestType === contentType;
+
+                      if (!shouldShowLabel) {
                         return null;
                       }
 
@@ -245,7 +270,16 @@ export default function ContentTypeChart({
         <div className="w-48 flex flex-col gap-3 py-4">
           <div className="text-sm font-medium text-muted-foreground">{title}:</div>
           {activeContentTypes.map((contentType, index) => (
-            <div key={contentType} className="flex items-center gap-2">
+            <div 
+              key={contentType} 
+              className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-colors ${
+                selectedLine === contentType ? "bg-blue-100" : "hover:bg-gray-100"
+              }`}
+              onClick={() => handleLegendClick(contentType)}
+              style={{
+                opacity: selectedLine && selectedLine !== contentType ? 0.5 : 1
+              }}
+            >
               <div 
                 className="h-3 w-3 rounded-full" 
                 style={{ backgroundColor: lineColors[index % lineColors.length] }}

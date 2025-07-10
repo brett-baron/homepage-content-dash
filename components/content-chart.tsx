@@ -63,6 +63,17 @@ export default function ContentChart({
 }: ContentChartProps) {
   const [filteredData, setFilteredData] = useState(data);
   const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 10]);
+  const [selectedLine, setSelectedLine] = useState<string | null>(null);
+
+  // Handle line selection
+  const handleLineClick = (lineName: string) => {
+    setSelectedLine(selectedLine === lineName ? null : lineName);
+  };
+
+  // Handle legend click
+  const handleLegendClick = (lineName: string) => {
+    setSelectedLine(selectedLine === lineName ? null : lineName);
+  };
 
   useEffect(() => {
     // Return early if data is empty
@@ -185,6 +196,8 @@ export default function ContentChart({
               strokeWidth={2}
               dot={{ r: 4, strokeWidth: 2 }}
               activeDot={{ r: 6, strokeWidth: 2 }}
+              onClick={() => handleLineClick("New Content")}
+              style={{ cursor: 'pointer' }}
             >
               <LabelList 
                 dataKey="count" 
@@ -206,7 +219,13 @@ export default function ContentChart({
       {/* Legend on the right */}
       <div className="w-48 flex flex-col gap-3 py-4">
         <div className="text-sm font-medium text-muted-foreground">Content:</div>
-        <div key="all-entries" className="flex items-center gap-2">
+        <div 
+          key="all-entries" 
+          className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-colors ${
+            selectedLine === "New Content" ? "bg-blue-100" : "hover:bg-gray-100"
+          }`}
+          onClick={() => handleLegendClick("New Content")}
+        >
           <div 
             className="h-3 w-3 rounded-full" 
             style={{ backgroundColor: "#3b82f6" }}
