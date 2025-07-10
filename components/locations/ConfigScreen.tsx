@@ -220,6 +220,26 @@ const ConfigScreen = () => {
     }));
   };
 
+  const toggleAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { checked } = event.target;
+    if (checked) {
+      setParameters(prev => ({
+        ...prev,
+        trackedContentTypes: contentTypes.map(ct => ct.id)
+      }));
+    } else {
+      setParameters(prev => ({
+        ...prev,
+        trackedContentTypes: []
+      }));
+    }
+  };
+
+  const areAllSelected = React.useMemo(() => {
+    const trackedTypes = parameters.trackedContentTypes || [];
+    return contentTypes.length > 0 && contentTypes.every(ct => trackedTypes.includes(ct.id));
+  }, [parameters.trackedContentTypes, contentTypes]);
+
   return (
     <Flex flexDirection="column" className={css({ margin: '40px', maxWidth: '800px' })}>
       <Form>
@@ -350,6 +370,10 @@ const ConfigScreen = () => {
                     : 'Select content types to track'
                 }
               >
+                <Multiselect.SelectAll
+                  onSelectItem={toggleAll}
+                  isChecked={areAllSelected}
+                />
                 {filteredContentTypes.map(contentType => (
                   <Multiselect.Option
                     key={`track-${contentType.id}`}
