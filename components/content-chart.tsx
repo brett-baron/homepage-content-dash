@@ -33,30 +33,6 @@ interface ContentChartProps {
   selectedTimeRange: 'all' | 'year' | '6months'
 }
 
-// Custom tooltip component to show percentage change
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    const formattedDate = formatDate(label);
-    const count = data.count;
-    const percentChange = data.percentChange;
-    
-    return (
-      <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
-        <p className="font-semibold">{formattedDate}</p>
-        <p>{`${count} new entries`}</p>
-        {percentChange !== undefined && (
-          <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
-            {formatPercentageChange(percentChange)} from previous month
-          </p>
-        )}
-      </div>
-    );
-  }
-  
-  return null;
-};
-
 export default function ContentChart({
   data = [],
   selectedTimeRange,
@@ -73,6 +49,54 @@ export default function ContentChart({
   // Handle legend click
   const handleLegendClick = (lineName: string) => {
     setSelectedLine(selectedLine === lineName ? null : lineName);
+  };
+
+  // Custom tooltip component to show percentage change
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const formattedDate = formatDate(label);
+      
+      // If a line is selected, show only that line's data
+      if (selectedLine) {
+        const selectedData = payload.find((item: any) => item.name === selectedLine);
+        if (selectedData) {
+          const data = selectedData.payload;
+          const count = selectedData.value;
+          const percentChange = data[`${selectedLine}_percentChange`];
+          
+          return (
+            <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
+              <p className="font-semibold">{formattedDate}</p>
+              <p>{`${selectedLine}: ${count} entries`}</p>
+              {percentChange !== undefined && (
+                <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  {formatPercentageChange(percentChange)} from previous month
+                </p>
+              )}
+            </div>
+          );
+        }
+      }
+      
+      // Default behavior when no line is selected
+      const data = payload[0].payload;
+      const count = data.count;
+      const percentChange = data.percentChange;
+      
+      return (
+        <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
+          <p className="font-semibold">{formattedDate}</p>
+          <p>{`${count} new entries`}</p>
+          {percentChange !== undefined && (
+            <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {formatPercentageChange(percentChange)} from previous month
+            </p>
+          )}
+        </div>
+      );
+    }
+    
+    return null;
   };
 
   useEffect(() => {

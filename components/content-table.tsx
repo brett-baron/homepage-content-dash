@@ -228,15 +228,31 @@ export function ContentTable({
 
   // Add effect to enrich data with CMA responses
   const [enrichedData, setEnrichedData] = useState<(ContentItem | ScheduledRelease)[]>(data);
+  const [lastDataRef, setLastDataRef] = useState<string>('');
+  
   useEffect(() => {
+    // Create a simple hash of the data to prevent unnecessary API calls
+    const dataHash = JSON.stringify(data.map(item => item.id));
+    if (dataHash === lastDataRef) {
+      return; // Skip if data hasn't actually changed
+    }
+    setLastDataRef(dataHash);
+
     const enrichDataWithCMA = async () => {
       if (!isScheduledReleaseData) {
         try {
+          // Only enrich items that don't already have fieldStatus to avoid redundant API calls
           const enrichedItems = await Promise.all(
             data.map(async (item) => {
               if (item.isShowMoreRow) return item as ContentItem;
               
               const contentItem = item as ContentItem;
+              
+              // Skip API call if fieldStatus already exists
+              if (contentItem.fieldStatus !== undefined) {
+                return contentItem;
+              }
+              
               try {
                 const entry = await cma.entry.get({
                   entryId: contentItem.id,
@@ -265,7 +281,7 @@ export function ContentTable({
     };
 
     enrichDataWithCMA();
-  }, [data, cma, sdk.ids.space, sdk.ids.environment, isScheduledReleaseData]);
+  }, [data, cma, sdk.ids.space, sdk.ids.environment, isScheduledReleaseData, lastDataRef]);
 
   // Use enrichedData instead of data for rendering
   const sortedData = isScheduledReleaseData 

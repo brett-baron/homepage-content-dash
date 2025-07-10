@@ -28,29 +28,6 @@ interface ContentTypeChartProps {
   title?: 'Content Types' | 'Authors' | 'Creators';
 }
 
-// Custom tooltip component
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    const formattedDate = formatDate(label);
-    
-    // Sort payload by value (count) in descending order
-    const sortedPayload = [...payload].sort((a, b) => b.value - a.value);
-    
-    return (
-      <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
-        <p className="font-semibold">{formattedDate}</p>
-        {sortedPayload.map((item: any, index: number) => (
-          <p key={index} style={{ color: item.color }}>
-            {`${item.name}: ${item.value} entries`}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  
-  return null;
-};
-
 // Array of colors for the lines
 const lineColors = [
   "#3b82f6", // blue-500
@@ -93,6 +70,54 @@ export default function ContentTypeChart({
   // Handle legend click
   const handleLegendClick = (lineName: string) => {
     setSelectedLine(selectedLine === lineName ? null : lineName);
+  };
+
+  // Custom tooltip component
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const formattedDate = formatDate(label);
+      
+      // If a line is selected, show only that line's data
+      if (selectedLine) {
+        const selectedData = payload.find((item: any) => item.name === selectedLine);
+        if (selectedData) {
+          const data = selectedData.payload;
+          const count = selectedData.value;
+          const percentChange = data[`${selectedLine}_percentChange`];
+          
+          return (
+            <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
+              <p className="font-semibold">{formattedDate}</p>
+              <p style={{ color: selectedData.color }}>
+                {`${selectedLine}: ${count} entries`}
+              </p>
+              {percentChange !== undefined && (
+                <p className={`text-sm ${percentChange >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  {formatPercentageChange(percentChange)} from previous month
+                </p>
+              )}
+            </div>
+          );
+        }
+      }
+      
+      // Default behavior when no line is selected - show all active lines
+      // Sort payload by value (count) in descending order
+      const sortedPayload = [...payload].sort((a, b) => b.value - a.value);
+      
+      return (
+        <div className="bg-white p-3 rounded-lg shadow-md border border-gray-100">
+          <p className="font-semibold">{formattedDate}</p>
+          {sortedPayload.map((item: any, index: number) => (
+            <p key={index} style={{ color: item.color }}>
+              {`${item.name}: ${item.value} entries`}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    
+    return null;
   };
 
   useEffect(() => {
@@ -142,8 +167,27 @@ export default function ContentTypeChart({
     );
     setActiveContentTypes(activeTypes);
 
+    // Calculate month-over-month percentage changes for each content type
+    const filteredWithPercentages = filtered.map((item, index, array) => {
+      const enhancedItem = { ...item };
+      
+      // Calculate percentage change for each active content type
+      activeTypes.forEach(type => {
+        if (index === 0 || array.length <= 1) {
+          enhancedItem[`${type}_percentChange`] = 0;
+        } else {
+          const currentCount = Number(item[type]) || 0;
+          const prevCount = Number(array[index - 1][type]) || 0;
+          const percentChange = calculatePercentageChange(currentCount, prevCount);
+          enhancedItem[`${type}_percentChange`] = percentChange;
+        }
+      });
+      
+      return enhancedItem;
+    });
+
     // Process data to identify highest value for each date
-    const processed = filtered.map(item => {
+    const processed = filteredWithPercentages.map(item => {
       const values = activeTypes.map(type => ({ type, value: Number(item[type]) || 0 }));
       const highest = values.reduce((max, curr) => curr.value > max.value ? curr : max, { type: '', value: -1 });
       return {
@@ -153,12 +197,12 @@ export default function ContentTypeChart({
       };
     });
     setProcessedData(processed);
-    setFilteredData(filtered);
+    setFilteredData(filteredWithPercentages);
     
     // Calculate appropriate y-axis range using only active content types
-    if (filtered.length > 0) {
+    if (filteredWithPercentages.length > 0) {
       const maxCount = Math.max(
-        ...filtered.flatMap(item => 
+        ...filteredWithPercentages.flatMap(item => 
           activeTypes.map(type => Number(item[type]) || 0)
         )
       );

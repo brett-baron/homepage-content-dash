@@ -30,9 +30,10 @@ interface ContentType {
   };
 }
 
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+// Cache constants
 const DASHBOARD_CACHE_KEY = 'contentDashboard_cachedData';
 const DASHBOARD_CACHE_TIMESTAMP_KEY = 'contentDashboard_cacheTimestamp';
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds (increased from 10 minutes to reduce API calls)
 
 interface CachedData<T> {
   data: T;
@@ -371,24 +372,8 @@ const Home = () => {
     }
   }, []);
 
-  // Add periodic cache validation to prevent blank dashboard
-  useEffect(() => {
-    const checkCacheValidity = () => {
-      if (hasLoadedData && !forceRefresh) {
-        const { isValid } = loadDashboardDataFromCache();
-        if (!isValid) {
-          console.log('Cache expired, forcing refresh...');
-          setHasLoadedData(false);
-          setForceRefresh(true);
-        }
-      }
-    };
-
-    // Check cache validity every 10 minutes
-    const interval = setInterval(checkCacheValidity, 10 * 60 * 1000);
-    
-    return () => clearInterval(interval);
-  }, [hasLoadedData, forceRefresh]);
+  // Removed periodic cache validation to prevent excessive API calls that cause 429 errors
+  // The cache will still be validated when the component mounts or when user manually refreshes
 
   useEffect(() => {
     // Don't run if config hasn't been loaded yet
@@ -809,7 +794,7 @@ const Home = () => {
     };
 
     fetchContentStats();
-  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData, configLoaded, getUserFullName, userCache]);
+  }, [cma, sdk.ids.space, sdk.ids.environment, trackedContentTypes, needsUpdateMonths, recentlyPublishedDays, timeToPublishDays, forceRefresh, hasLoadedData, configLoaded, getUserFullName]);
 
   const formatDateTime = (dateTimeStr: string) => {
     const date = new Date(dateTimeStr);
