@@ -22,7 +22,7 @@ import {
 } from '@contentful/f36-components';
 import { MoreHorizontalIcon } from '@contentful/f36-icons';
 import Link from "next/link"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { 
   Table, 
   TableBody, 
@@ -222,6 +222,7 @@ export function ContentTable({
   const [selectedTime, setSelectedTime] = useState("12:00 PM");
   const [selectedTimezone, setSelectedTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [isLoading, setIsLoading] = useState(false);
+  const [contentTypeNames, setContentTypeNames] = useState<{ [key: string]: string }>({});
 
   // Check if the data is ScheduledRelease[]
   const isScheduledReleaseData = data.length > 0 && 'scheduledDateTime' in data[0];
@@ -229,6 +230,35 @@ export function ContentTable({
   // Add effect to enrich data with CMA responses
   const [enrichedData, setEnrichedData] = useState<(ContentItem | ScheduledRelease)[]>(data);
   const [lastDataRef, setLastDataRef] = useState<string>('');
+
+  // Function to fetch content types and cache their names
+  const fetchContentTypeNames = useCallback(async () => {
+    try {
+      const contentTypesResponse = await cma.contentType.getMany({
+        spaceId: sdk.ids.space,
+        environmentId: sdk.ids.environment
+      });
+
+      const contentTypeMap: { [key: string]: string } = {};
+      contentTypesResponse.items.forEach((contentType: any) => {
+        contentTypeMap[contentType.sys.id] = contentType.name;
+      });
+
+      setContentTypeNames(contentTypeMap);
+    } catch (error) {
+      console.error('Error fetching content types:', error);
+    }
+  }, [cma, sdk.ids.space, sdk.ids.environment]);
+
+  // Fetch content types on component mount
+  useEffect(() => {
+    fetchContentTypeNames();
+  }, [fetchContentTypeNames]);
+
+  // Helper function to get content type name from ID
+  const getContentTypeName = useCallback((contentTypeId: string) => {
+    return contentTypeNames[contentTypeId] || contentTypeId;
+  }, [contentTypeNames]);
   
   useEffect(() => {
     // Create a simple hash of the data to prevent unnecessary API calls
@@ -611,7 +641,7 @@ export function ContentTable({
                             })()}
                           </TableCell>
                         )}
-                        <TableCell>{(item as ContentItem).workflow}</TableCell>
+                        <TableCell>{getContentTypeName((item as ContentItem).workflow)}</TableCell>
                         {showAge && <TableCell>{(item as ContentItem).age} days</TableCell>}
                         <TableCell>{formatDate((item as ContentItem).date)}</TableCell>
                       </>

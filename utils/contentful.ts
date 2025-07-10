@@ -465,6 +465,17 @@ export const fetchContentTypeChartData = async (
   
   startDate.setHours(0, 0, 0, 0);
 
+  // Fetch content types to get the mapping from ID to name
+  const contentTypesResponse = await cma.contentType.getMany({
+    spaceId,
+    environmentId
+  });
+
+  const contentTypeMap: { [key: string]: string } = {};
+  contentTypesResponse.items.forEach((contentType: any) => {
+    contentTypeMap[contentType.sys.id] = contentType.name;
+  });
+
   // Only fetch new content
   const fetchNewContent = (skip: number, limit: number) =>
     cma.entry.getMany({
@@ -482,7 +493,7 @@ export const fetchContentTypeChartData = async (
   // Fetch all pages
   const newContentEntries = await fetchAllPages(fetchNewContent);
 
-  // Create data structure to store monthly counts by content type
+  // Create data structure to store monthly counts by content type NAME
   const monthlyData: { [key: string]: { [key: string]: number } } = {};
 
   // Initialize all months with zero counts
@@ -498,29 +509,32 @@ export const fetchContentTypeChartData = async (
     if (entry.sys.firstPublishedAt) {
       const publishDate = new Date(entry.sys.firstPublishedAt);
       const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}-01`;
-      const contentType = entry.sys.contentType?.sys.id || 'unknown';
+      const contentTypeId = entry.sys.contentType?.sys.id || 'unknown';
+      const contentTypeName = contentTypeMap[contentTypeId] || contentTypeId; // Use name if available, fallback to ID
 
       if (monthlyData[monthKey]) {
-        if (!monthlyData[monthKey][contentType]) {
-          monthlyData[monthKey][contentType] = 0;
+        if (!monthlyData[monthKey][contentTypeName]) {
+          monthlyData[monthKey][contentTypeName] = 0;
         }
-        monthlyData[monthKey][contentType]++;
+        monthlyData[monthKey][contentTypeName]++;
       }
     }
   });
 
-  // Get all content types that have been published
-  const allContentTypes = new Set<string>();
+  // Get all content type names that have been published
+  const allContentTypeNames = new Set<string>();
   Object.values(monthlyData).forEach(monthData => {
-    Object.keys(monthData).forEach(contentType => {
-      allContentTypes.add(contentType);
+    Object.keys(monthData).forEach(contentTypeName => {
+      allContentTypeNames.add(contentTypeName);
     });
   });
 
   // Filter content types based on tracked types if provided
-  const contentTypes = trackedContentTypes.length > 0 
-    ? trackedContentTypes.filter(type => allContentTypes.has(type))
-    : Array.from(allContentTypes);
+  // Convert tracked content type IDs to names for filtering
+  const trackedContentTypeNames = trackedContentTypes.map(id => contentTypeMap[id] || id);
+  const contentTypeNames = trackedContentTypeNames.length > 0 
+    ? trackedContentTypeNames.filter(name => allContentTypeNames.has(name))
+    : Array.from(allContentTypeNames);
 
   // Create sorted array of months
   const sortedMonths = Object.keys(monthlyData).sort();
@@ -528,14 +542,14 @@ export const fetchContentTypeChartData = async (
   // Transform data into the required format
   const contentTypeData = sortedMonths.map(month => {
     const monthData: { [key: string]: string | number } = { date: month };
-    contentTypes.forEach(contentType => {
-      monthData[contentType] = monthlyData[month]?.[contentType] || 0;
+    contentTypeNames.forEach(contentTypeName => {
+      monthData[contentTypeName] = monthlyData[month]?.[contentTypeName] || 0;
     });
     return monthData;
   });
 
   return {
     contentTypeData: contentTypeData as Array<{ date: string; [key: string]: string | number }>,
-    contentTypes: contentTypes
+    contentTypes: contentTypeNames
   };
 }; 
