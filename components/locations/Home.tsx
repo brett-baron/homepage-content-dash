@@ -1052,6 +1052,9 @@ const Home = () => {
               needsUpdateMonths={needsUpdateMonths}
               recentlyPublishedDays={recentlyPublishedDays}
             />
+            
+            {/* Bottom spacer to prevent content from being at the very bottom */}
+            <div className="h-16"></div>
           </>
         )}
       </main>
