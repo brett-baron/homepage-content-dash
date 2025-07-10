@@ -75,8 +75,8 @@ const cache = {
 // Helper functions for dashboard data caching
 const saveDashboardDataToCache = (data: DashboardData) => {
   try {
-    sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
-    sessionStorage.setItem(DASHBOARD_CACHE_TIMESTAMP_KEY, Date.now().toString());
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(DASHBOARD_CACHE_TIMESTAMP_KEY, Date.now().toString());
   } catch (error) {
     console.warn('Failed to save dashboard data to cache:', error);
   }
@@ -84,8 +84,8 @@ const saveDashboardDataToCache = (data: DashboardData) => {
 
 const loadDashboardDataFromCache = (): { data: DashboardData | null; isValid: boolean } => {
   try {
-    const cachedData = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
-    const cacheTimestamp = sessionStorage.getItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+    const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    const cacheTimestamp = localStorage.getItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
     
     if (!cachedData || !cacheTimestamp) {
       return { data: null, isValid: false };
@@ -110,8 +110,8 @@ const loadDashboardDataFromCache = (): { data: DashboardData | null; isValid: bo
 
 const clearDashboardCache = () => {
   try {
-    sessionStorage.removeItem(DASHBOARD_CACHE_KEY);
-    sessionStorage.removeItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
+    localStorage.removeItem(DASHBOARD_CACHE_TIMESTAMP_KEY);
   } catch (error) {
     console.warn('Failed to clear dashboard cache:', error);
   }
@@ -225,9 +225,12 @@ const Home = () => {
     };
   }, [isLoading]);
 
-  // Fix the getUserFullName function to use getManyForSpace
+  // Cache for all users in the space to avoid repeated API calls
+  const [allUsersCache, setAllUsersCache] = useState<Map<string, { data: any[], timestamp: number }>>(new Map());
+
+  // Optimized getUserFullName function that fetches all users once and caches them
   const getUserFullName = useCallback(async (userId: string): Promise<string> => {
-    // Check cache first
+    // Check individual user cache first
     const cachedUser = cache.users.get(userId);
     if (cachedUser && Date.now() - cachedUser.timestamp < CACHE_DURATION) {
       // Update component state cache
@@ -238,38 +241,69 @@ const Home = () => {
       return cachedUser.data;
     }
 
-    try {
-      // Use getManyForSpace instead of getMany
-      const users = await cma.user.getManyForSpace({
-        spaceId: sdk.ids.space
-      });
-      
-      const user = users.items.find(u => u.sys.id === userId);
-      if (!user) {
-        throw new Error(`User not found: ${userId}`);
+    // Check if we have cached all users for this space
+    const spaceKey = sdk.ids.space;
+    const cachedAllUsers = allUsersCache.get(spaceKey);
+    
+    let allUsers: any[];
+    
+    if (cachedAllUsers && Date.now() - cachedAllUsers.timestamp < CACHE_DURATION) {
+      // Use cached users
+      allUsers = cachedAllUsers.data;
+    } else {
+      // Fetch all users only once and cache them
+      try {
+        const usersResponse = await cma.user.getManyForSpace({
+          spaceId: sdk.ids.space
+        });
+        allUsers = usersResponse.items;
+        
+        // Cache all users for this space
+        setAllUsersCache(prev => new Map(prev.set(spaceKey, {
+          data: allUsers,
+          timestamp: Date.now()
+        })));
+        
+        // Cache each individual user
+        allUsers.forEach(user => {
+          const fullName = user.firstName && user.lastName 
+            ? `${user.firstName} ${user.lastName}`
+            : user.email || user.sys.id;
+          
+          cache.users.set(user.sys.id, {
+            data: fullName,
+            timestamp: Date.now()
+          });
+        });
+      } catch (error) {
+        console.error(`Error fetching users for space ${sdk.ids.space}:`, error);
+        return userId;
       }
+    }
 
-      const fullName = user.firstName && user.lastName 
-        ? `${user.firstName} ${user.lastName}`
-        : user.email || userId;
-
-      // Update both caches
+    // Find the specific user
+    const user = allUsers.find(u => u.sys.id === userId);
+    if (!user) {
+      // Cache the "not found" result to avoid repeated lookups
       cache.users.set(userId, {
-        data: fullName,
+        data: userId,
         timestamp: Date.now()
       });
-
-      setUserCache(prev => ({
-        ...prev,
-        [userId]: fullName
-      }));
-
-      return fullName;
-    } catch (error) {
-      console.error(`Error fetching user data for ${userId}:`, error);
       return userId;
     }
-  }, [cma, sdk.ids.space]);
+
+    const fullName = user.firstName && user.lastName 
+      ? `${user.firstName} ${user.lastName}`
+      : user.email || userId;
+
+    // Update component state cache
+    setUserCache(prev => ({
+      ...prev,
+      [userId]: fullName
+    }));
+
+    return fullName;
+  }, [cma, sdk.ids.space, allUsersCache]);
 
   // Add a function to fetch content types with caching
   const getContentTypes = useCallback(async () => {

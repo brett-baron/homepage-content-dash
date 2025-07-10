@@ -153,7 +153,7 @@ export const ContentEntryTabs: React.FC<ContentEntryTabsProps> = ({
     };
 
     updateTransformedData();
-  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, userCache, onResolveUser]);
+  }, [scheduledContent, recentlyPublishedContent, needsUpdateContent, onResolveUser]);
 
   const getDisplayData = (data: TransformedEntry[], type: 'scheduled' | 'published' | 'update') => {
     // Pre-sort the data depending on the type
