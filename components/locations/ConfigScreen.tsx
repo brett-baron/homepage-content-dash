@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { ConfigAppSDK } from '@contentful/app-sdk';
-import { Heading, Form, Flex, FormControl, Spinner, Select, Switch } from '@contentful/f36-components';
+import { Heading, Form, Flex, FormControl, Spinner, Select, Switch, Note } from '@contentful/f36-components';
 import { Multiselect } from '@contentful/f36-multiselect';
 import { css } from 'emotion';
 import { useCMA, useSDK } from '@contentful/react-apps-toolkit';
@@ -241,9 +241,10 @@ const ConfigScreen = () => {
   }, [parameters.trackedContentTypes, contentTypes]);
 
   return (
-    <Flex flexDirection="column" className={css({ margin: '40px', maxWidth: '800px' })}>
-      <Form>
-        <Heading>Content Dashboard Configuration</Heading>
+    <Flex className={css({ margin: '40px', gap: '40px', maxWidth: '1600px' })}>
+      <Flex flexDirection="column" className={css({ flex: '1', minWidth: '0' })}>
+        <Form>
+          <Heading>Content Dashboard Configuration</Heading>
         
         {isLoading ? (
           <Flex justifyContent="center" margin="spacingL">
@@ -391,7 +392,21 @@ const ConfigScreen = () => {
             </FormControl>
           </>
         )}
-      </Form>
+        </Form>
+      </Flex>
+      
+      <Flex flexDirection="column" className={css({ flex: '1', minWidth: '0' })}>
+        <Note variant="warning" title="Set as Home Page" className={css({ height: 'fit-content' })}>
+          To make this dashboard your default home page when you open Contentful:
+          <ol className={css({ marginTop: '8px', paddingLeft: '20px' })}>
+            <li>Click the gear icon (⚙️) in the top right corner of Contentful</li>
+            <li>Select "Home" from the settings menu</li>
+            <li>Choose "Content Production Dashboard" from the app dropdown</li>
+            <li>Click "Save" to apply the changes</li>
+          </ol>
+          This will make the dashboard appear automatically whenever you navigate to your Contentful home page.
+        </Note>
+      </Flex>
     </Flex>
   );
 };
