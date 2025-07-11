@@ -400,9 +400,9 @@ const ConfigScreen = () => {
           To make this dashboard your default home page when you open Contentful:
           <ol className={css({ marginTop: '8px', paddingLeft: '20px' })}>
             <li>Click the gear icon (⚙️) in the top right corner of Contentful</li>
-            <li>Select "Home" from the settings menu</li>
-            <li>Choose "Content Production Dashboard" from the app dropdown</li>
-            <li>Click "Save" to apply the changes</li>
+            <li>Select &quot;Home&quot; from the settings menu</li>
+            <li>Choose &quot;Content Production Dashboard&quot; from the app dropdown</li>
+            <li>Click &quot;Save&quot; to apply the changes</li>
           </ol>
           This will make the dashboard appear automatically whenever you navigate to your Contentful home page.
         </Note>
