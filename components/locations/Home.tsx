@@ -5,6 +5,7 @@ import { CalendarDays, Clock, Edit, FileText, GitBranchPlus, RefreshCw, Timer } 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ContentTable } from "@/components/content-table"
 import ContentTrendsTabs from "@/components/content-trends-tabs"
+import TaskManager from "@/components/task-manager"
 import { getContentStatsPaginated, fetchEntriesByType, fetchChartData, calculateAverageTimeToPublish, fetchContentTypeChartData } from '../../utils/contentful';
 import { EntryProps } from 'contentful-management';
 import { ContentEntryTabs } from '@/components/ContentEntryTabs';
@@ -996,75 +997,95 @@ const Home = () => {
           </div>
         ) : (
           <>
-            <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 w-full">
-              <Card className="w-full relative">
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <FileText className="h-8 w-8 text-primary" />
+            {/* Top section with metrics cards and task manager */}
+            <div className="flex flex-col lg:flex-row gap-4 md:gap-8">
+              {/* Metrics Cards Section */}
+              <div className="lg:w-1/2 lg:flex-shrink-0">
+                <div className="grid gap-2 sm:gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 w-full">
+                  {/* Total Published */}
+                  <Card className="w-full relative">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <FileText className="h-8 w-8 text-primary" />
+                    </div>
+                    <CardHeader className="pb-1 pt-2 px-3 pr-14">
+                      <CardTitle className="text-sm font-semibold">Total Published</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 pt-0 px-3 pr-14">
+                      <div className="text-3xl font-bold">{stats.totalPublished}</div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {stats.previousMonthPublished === 0 && stats.percentChange === 0
+                        ? 'No new content published recently'
+                        : (
+                          <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
+                            {formatPercentageChange(stats.percentChange)} publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
+                          </span>
+                        )}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Average Time to Publish */}
+                  <Card className="w-full relative">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Timer className="h-8 w-8 text-primary" />
+                    </div>
+                    <CardHeader className="pb-1 pt-2 px-3 pr-14">
+                      <CardTitle className="text-sm font-semibold">Average Time to Publish</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 pt-0 px-3 pr-14">
+                      <div className="text-3xl font-bold">{stats.averageTimeToPublish.toFixed(1)} days</div>
+                      <p className="text-sm text-muted-foreground mt-1">For the last {timeToPublishDays} days</p>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Scheduled */}
+                  <Card className="w-full relative">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <CalendarDays className="h-8 w-8 text-primary" />
+                    </div>
+                    <CardHeader className="pb-1 pt-2 px-3 pr-14">
+                      <CardTitle className="text-sm font-semibold">Scheduled</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 pt-0 px-3 pr-14">
+                      <div className="text-3xl font-bold">{stats.scheduledCount}</div>
+                      <p className="text-sm text-muted-foreground mt-1">For the next 30 days</p>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Recently Published */}
+                  <Card className="w-full relative">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Clock className="h-8 w-8 text-primary" />
+                    </div>
+                    <CardHeader className="pb-1 pt-2 px-3 pr-14">
+                      <CardTitle className="text-sm font-semibold">Recently Published</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 pt-0 px-3 pr-14">
+                      <div className="text-3xl font-bold">{stats.recentlyPublishedCount}</div>
+                      <p className="text-sm text-muted-foreground mt-1">In the last {recentlyPublishedDays} {recentlyPublishedDays === 1 ? 'day' : 'days'}</p>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Needs Update */}
+                  <Card className="w-full relative">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Edit className="h-8 w-8 text-primary" />
+                    </div>
+                    <CardHeader className="pb-1 pt-2 px-3 pr-14">
+                      <CardTitle className="text-sm font-semibold">Needs Update</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3 pt-0 px-3 pr-14">
+                      <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
+                      <p className="text-sm text-muted-foreground mt-1">Content older than {needsUpdateMonths} {needsUpdateMonths === 1 ? 'month' : 'months'}</p>
+                    </CardContent>
+                  </Card>
                 </div>
-                <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Total Published</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{stats.totalPublished}</div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {stats.previousMonthPublished === 0 && stats.percentChange === 0
-                    ? 'No new content published recently'
-                    : (
-                      <span className={stats.percentChange >= 0 ? "text-green-500" : "text-red-500"}>
-                        {formatPercentageChange(stats.percentChange)} publishing {stats.percentChange >= 0 ? 'increase' : 'decrease'} MoM
-                      </span>
-                    )}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="w-full relative">
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <CalendarDays className="h-8 w-8 text-primary" />
-                </div>
-                <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Scheduled</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{stats.scheduledCount}</div>
-                  <p className="text-sm text-muted-foreground mt-1">For the next 30 days</p>
-                </CardContent>
-              </Card>
-              <Card className="w-full relative">
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Clock className="h-8 w-8 text-primary" />
-                </div>
-                <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Recently Published</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{stats.recentlyPublishedCount}</div>
-                  <p className="text-sm text-muted-foreground mt-1">In the last {recentlyPublishedDays} {recentlyPublishedDays === 1 ? 'day' : 'days'}</p>
-                </CardContent>
-              </Card>
-              <Card className="w-full relative">
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Edit className="h-8 w-8 text-primary" />
-                </div>
-                <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Needs Update</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
-                  <p className="text-sm text-muted-foreground mt-1">Content older than {needsUpdateMonths} {needsUpdateMonths === 1 ? 'month' : 'months'}</p>
-                </CardContent>
-              </Card>
-              <Card className="w-full relative">
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Timer className="h-8 w-8 text-primary" />
-                </div>
-                <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Average Time to Publish</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{stats.averageTimeToPublish.toFixed(1)} days</div>
-                  <p className="text-sm text-muted-foreground mt-1">For the last {timeToPublishDays} days</p>
-                </CardContent>
-              </Card>
+              </div>
+              
+              {/* Task Manager Section */}
+              <div className="lg:w-1/2 lg:flex-shrink-0">
+                <TaskManager />
+              </div>
             </div>
 
             {/* Content Publishing Trends Section */}
