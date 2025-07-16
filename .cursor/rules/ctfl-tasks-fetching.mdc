@@ -1,0 +1,287 @@
+---
+alwaysApply: true
+---
+
+## Guide: Implementing Task Fetching in a Contentful Homepage App
+
+### Overview
+
+When building Contentful homepage apps, particularly with custom task management screens, it is critical to leverage the most **scalable and performant API patterns**. This means fetching tasks in batches and avoiding approaches that require an API call for each task or entry. Below you’ll find detailed recommendations, sample rules, and best practices for using the App SDK and the Content Management API (CMA) to implement efficient task fetching.
+
+### Key Concepts
+
+#### Contentful App SDK
+- The App SDK allows your app to **interface with the Contentful web app** and CMA, providing access to spaces, environments, users, and entry data[1][2].
+- For React apps, the `@contentful/react-apps-toolkit` offers hooks like `useCMA()` to get a pre-scoped CMA client instance for making API requests from within your app components[3].
+- Use `SDKProvider` to expose the App SDK to your React component tree, then utilize hooks for data fetching and management[4][3].
+
+#### Content Management API (CMA)
+- The **CMA** is a RESTful API for managing and querying your Contentful content. It is read-write, supports authentication, and is the recommended way to programmatically access tasks and other objects within a space or environment[5][6].
+- The provided fetch URL pattern:
+  ```
+  https://{{cma_url}}/spaces/{{Space ID}}/environments/{{Environment}}/tasks?filter=myPendingTasks
+  ```
+  is exactly what you need for **fetching all matching tasks in bulk** for a given space/environment.
+
+### Cursor Rule Recommendations for Fetching Tasks
+
+#### 1. **Always Use Bulk Fetch Endpoints**
+- Fetch all relevant tasks in a single call by using the `/tasks` endpoint with necessary filters (e.g., `myPendingTasks`).
+- Avoid requesting each task individually or querying entry by entry—this approach scales poorly and is **prohibitively expensive** as data grows[7][8][6].
+
+#### 2. **Paginate if Necessary**
+- If result sets are large, utilize CMA's built-in pagination:
+  - Look for `limit` and `skip` query parameters to control batch size and serve results in pages[9][10].
+  - Parse the API response for pagination metadata (such as a `nextPageUrl`) and make additional calls as needed until all tasks are fetched[11][6].
+
+#### 3. **Avoid the “N+1 Problem”**
+- Do **not** loop over every entry/task and issue a separate fetch per item. This leads to significant performance issues, rate limit hits, and user-facing slowdowns[7][8][10].
+- Your rules should flag any code or cursor logic that does this, and instead recommend consolidation into a single batched request using the API URL provided.
+
+#### 4. **Use `useCMA()` or Equivalent in App SDK**
+- For React-based apps:
+  - Use the `useCMA()` hook from `@contentful/react-apps-toolkit` to obtain a correctly scoped and authenticated API client[3].
+  - Pass all relevant URL parameters directly—never hard-code or iterate over individual IDs unless absolutely necessary.
+
+#### 5. **Implement Robust Error and Rate Limit Handling**
+- Handle API errors gracefully, including handling rate limits per Contentful's API guidelines[5][6].
+
+### Implementation Example (Pseudo-Rules)
+
+```js
+// Pseudo-rules (for a cursor system or similar automation)
+// These describe forbidden and recommended patterns.
+
+// ❌ DO NOT:
+for each (taskId in taskIds) {
+  fetch(`.../tasks/${taskId}`); // This is NOT scalable
+}
+
+// ✅ DO THIS INSTEAD:
+fetch('https://{{cma_url}}/spaces/{{Space ID}}/environments/{{Environment}}/tasks?filter=myPendingTasks');
+while (response.nextPageUrl) {
+  fetch(response.nextPageUrl); // Paginate as necessary
+}
+```
+- In React:
+```js
+import { useCMA } from '@contentful/react-apps-toolkit';
+
+const cma = useCMA();
+useEffect(() => {
+  cma.custom.fetch('tasks', { filter: 'myPendingTasks', limit: 100 })
+    .then(setTasks);
+}, [cma]);
+```
+
+### Why Not One-by-One Fetching?
+
+- **Non-Scalable**: Direct, per-task or per-entry fetching leads to tens, hundreds, or thousands of unnecessary network calls. This quickly exhausts API rate limits and dramatically slows down your interface[7][8][6].
+- **Best Practice**: Use the bulk fetch endpoint (`/tasks?filter=...`) with pagination—this is the only scalable approach for production-quality Contentful apps that need to fetch tasks[7][10][6].
+
+### Resources
+
+- [Contentful App SDK Reference][1]
+- [Contentful App SDK NPM][2]
+- [React Apps Toolkit][3]
+- [Content Management API documentation][6]
+- [API basics and pagination guidance][12][10]
+
+GET API EXAMPLE: https://{{cma_url}}/spaces/{{Space ID}}/environments/{{Environment}}/tasks?filter=myPendingTasks
+
+API example Response:
+{
+    "sys": {
+        "type": "Array"
+    },
+    "items": [
+        {
+            "body": "test",
+            "status": "active",
+            "dueDate": "2025-07-17T05:59:59.999Z",
+            "assignedTo": {
+                "sys": {
+                    "type": "Link",
+                    "linkType": "User",
+                    "id": "7Lbw2xJhOXFqNIQ8QEbJxP"
+                }
+            },
+            "sys": {
+                "id": "3Vs4HZuaZNvZaqN3XgXLzJ",
+                "type": "Task",
+                "space": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Space",
+                        "id": "8mml8m7dh0b3"
+                    }
+                },
+                "environment": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Environment",
+                        "id": "master"
+                    }
+                },
+                "parentEntity": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Entry",
+                        "id": "entry2952"
+                    }
+                },
+                "createdBy": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "User",
+                        "id": "7Lbw2xJhOXFqNIQ8QEbJxP"
+                    }
+                },
+                "createdAt": "2025-07-15T19:39:32.681Z",
+                "updatedBy": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "User",
+                        "id": "7Lbw2xJhOXFqNIQ8QEbJxP"
+                    }
+                },
+                "updatedAt": "2025-07-15T19:39:32.681Z",
+                "version": 1
+            }
+        },
+        {
+            "body": "test who the creator is",
+            "status": "active",
+            "dueDate": "2025-07-17T22:12:16.980Z",
+            "assignedTo": {
+                "sys": {
+                    "type": "Link",
+                    "linkType": "User",
+                    "id": "7Lbw2xJhOXFqNIQ8QEbJxP"
+                }
+            },
+            "sys": {
+                "id": "PhouXGdK9C9ABu4e9HZG2",
+                "type": "Task",
+                "space": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Space",
+                        "id": "8mml8m7dh0b3"
+                    }
+                },
+                "environment": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Environment",
+                        "id": "master"
+                    }
+                },
+                "parentEntity": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Entry",
+                        "id": "entry2972"
+                    }
+                },
+                "createdBy": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "AppDefinition",
+                        "id": "IzXGEKn1YcF831Z2r6TtN"
+                    }
+                },
+                "createdAt": "2025-07-15T22:12:19.301Z",
+                "updatedBy": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "AppDefinition",
+                        "id": "IzXGEKn1YcF831Z2r6TtN"
+                    }
+                },
+                "updatedAt": "2025-07-15T22:12:19.301Z",
+                "version": 1
+            }
+        },
+        {
+            "body": "test team",
+            "status": "active",
+            "dueDate": "2025-07-26T05:59:59.999Z",
+            "assignedTo": {
+                "sys": {
+                    "type": "Link",
+                    "linkType": "Team",
+                    "id": "7zu0Rj7hUDavSg6AMckfLp"
+                }
+            },
+            "sys": {
+                "id": "CfPTTvqs9odcDBfWRYcr3",
+                "type": "Task",
+                "space": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Space",
+                        "id": "8mml8m7dh0b3"
+                    }
+                },
+                "environment": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Environment",
+                        "id": "master"
+                    }
+                },
+                "parentEntity": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "Entry",
+                        "id": "entry2961"
+                    }
+                },
+                "createdBy": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "User",
+                        "id": "7Lbw2xJhOXFqNIQ8QEbJxP"
+                    }
+                },
+                "createdAt": "2025-07-16T20:30:42.311Z",
+                "updatedBy": {
+                    "sys": {
+                        "type": "Link",
+                        "linkType": "User",
+                        "id": "7Lbw2xJhOXFqNIQ8QEbJxP"
+                    }
+                },
+                "updatedAt": "2025-07-16T20:30:42.311Z",
+                "version": 1
+            }
+        }
+    ],
+    "total": 3,
+    "skip": 0,
+    "limit": 100
+}
+
+By following these rules, you ensure your Contentful homepage app will remain performant and scalable, especially as your content and number of tasks grow.
+
+[1] https://www.contentful.com/developers/docs/extensibility/app-framework/sdk/
+[2] https://www.npmjs.com/package/@contentful/app-sdk
+[3] https://www.contentful.com/developers/docs/extensibility/app-framework/react-apps-toolkit/
+[4] https://www.contentful.com/developers/docs/extensibility/app-framework/
+[5] https://www.contentful.com/developers/docs/concepts/apis/
+[6] https://www.contentful.com/developers/docs/references/content-management-api/
+[7] https://www.contentful.com/blog/new-api-endpoints-manage-content-atscale/
+[8] https://moldstud.com/articles/p-what-are-some-best-practices-for-developing-with-contentful
+[9] https://www.contentful.com/blog/paginating-contentful-blogposts-with-nextjs-graphql-api/
+[10] https://www.contentful.com/blog/graphql-pagination-cursor-offset-tutorials/
+[11] https://www.contentful.com/developers/docs/references/content-delivery-api/
+[12] https://www.contentful.com/developers/docs/android/sdks/
+[13] https://www.contentful.com/developers/docs/extensibility/app-framework/tutorial/
+[14] https://github.com/contentful/contentful-management.java
+[15] https://www.xtivia.com/blog/contentful-best-practices/
+[16] https://github.com/contentful/apps
+[17] https://cloudinary.com/guides/ecosystems/contentful-image-api
+[18] https://www.contentful.com/blog/react-pagination/
+[19] https://stackoverflow.com/questions/49837418/contentful-with-react-redux-best-practices-for-retrieving-data
+[20] https://stackoverflow.com/questions/68802728/adding-installation-parameters-to-a-contentful-app
