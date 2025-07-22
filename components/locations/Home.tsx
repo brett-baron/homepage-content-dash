@@ -1019,6 +1019,18 @@ const Home = () => {
               </Card>
               <Card className="w-full relative">
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Timer className="h-8 w-8 text-primary" />
+                </div>
+                <CardHeader className="pb-1 pt-2 px-3 pr-14">
+                  <CardTitle className="text-sm font-semibold">Average Time to Publish</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-3 pt-0 px-3 pr-14">
+                  <div className="text-3xl font-bold">{stats.averageTimeToPublish.toFixed(1)} days</div>
+                  <p className="text-sm text-muted-foreground mt-1">For the last {timeToPublishDays} days</p>
+                </CardContent>
+              </Card>
+              <Card className="w-full relative">
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
                   <CalendarDays className="h-8 w-8 text-primary" />
                 </div>
                 <CardHeader className="pb-1 pt-2 px-3 pr-14">
@@ -1051,18 +1063,6 @@ const Home = () => {
                 <CardContent className="pb-3 pt-0 px-3 pr-14">
                   <div className="text-3xl font-bold">{stats.needsUpdateCount}</div>
                   <p className="text-sm text-muted-foreground mt-1">Content older than {needsUpdateMonths} {needsUpdateMonths === 1 ? 'month' : 'months'}</p>
-                </CardContent>
-              </Card>
-              <Card className="w-full relative">
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Timer className="h-8 w-8 text-primary" />
-                </div>
-                <CardHeader className="pb-1 pt-2 px-3 pr-14">
-                  <CardTitle className="text-sm font-semibold">Average Time to Publish</CardTitle>
-                </CardHeader>
-                <CardContent className="pb-3 pt-0 px-3 pr-14">
-                  <div className="text-3xl font-bold">{stats.averageTimeToPublish.toFixed(1)} days</div>
-                  <p className="text-sm text-muted-foreground mt-1">For the last {timeToPublishDays} days</p>
                 </CardContent>
               </Card>
             </div>
