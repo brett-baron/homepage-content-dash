@@ -617,11 +617,15 @@ const Home = () => {
             );
 
             // Add release entries to scheduledEntryIds
+            // Handle both timeline releases (Release.v2) and regular releases
             releases.forEach(release => {
               if (release.entities?.items) {
-                release.entities.items.forEach((entity: { sys: { id: string } }) => {
-                  if (entity.sys?.id) {
-                    scheduledEntryIds.add(entity.sys.id);
+                release.entities.items.forEach((item: any) => {
+                  // Timeline releases (Release.v2) have structure: item.entity.sys.id
+                  // Regular releases might have different structure, so we check both
+                  const entryId = item.entity?.sys?.id || item.sys?.id;
+                  if (entryId && item.action === 'publish') {
+                    scheduledEntryIds.add(entryId);
                   }
                 });
               }
